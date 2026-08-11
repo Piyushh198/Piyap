@@ -18,7 +18,7 @@ local MinButton = Instance.new("TextButton")
 local Glow = Instance.new("ImageLabel")
 local CPSInput = Instance.new("TextBox")
 local InputCorner = Instance.new("UICorner")
-local PosLabel = Instance.new("TextLabel")
+local PosLabel = Instance.new("TextButton") -- Converted to TextButton for clicking
 local PosCorner = Instance.new("UICorner")
 local StatusLabel = Instance.new("TextLabel")
 local StatusCorner = Instance.new("UICorner")
@@ -111,6 +111,7 @@ PosLabel.TextColor3 = Color3.fromRGB(160, 160, 180)
 PosLabel.TextSize = 13.000
 PosLabel.BorderSizePixel = 0
 PosLabel.ZIndex = 2
+PosLabel.AutoButtonColor = false
 
 PosCorner.CornerRadius = UDim.new(0, 8)
 PosCorner.Parent = PosLabel
@@ -182,6 +183,14 @@ table.insert(connections, MinButton.MouseButton1Click:Connect(function()
         MinButton.Text = "-"
         tween(MainFrame, {Size = UDim2.new(0, 250, 0, 195)}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
     end
+end))
+
+-- New logic: Click the coordinates to reset them
+table.insert(connections, PosLabel.MouseButton1Click:Connect(function()
+    positionSet = false
+    PosLabel.Text = "Press [P]"
+    tween(PosLabel, {TextColor3 = Color3.fromRGB(255, 70, 70)}, 0.1)
+    task.delay(0.2, function() tween(PosLabel, {TextColor3 = Color3.fromRGB(160, 160, 180)}, 0.3) end)
 end))
 
 local function toggleAutoClicker()
