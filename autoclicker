@@ -1,3 +1,7 @@
+if getgenv().PiyapClicker_Cleanup then
+    getgenv().PiyapClicker_Cleanup()
+end
+
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
@@ -10,6 +14,7 @@ local UICorner = Instance.new("UICorner")
 local UIStroke = Instance.new("UIStroke")
 local Title = Instance.new("TextLabel")
 local TitleGradient = Instance.new("UIGradient")
+local MinButton = Instance.new("TextButton")
 local Glow = Instance.new("ImageLabel")
 local CPSInput = Instance.new("TextBox")
 local InputCorner = Instance.new("UICorner")
@@ -17,6 +22,8 @@ local PosLabel = Instance.new("TextLabel")
 local PosCorner = Instance.new("UICorner")
 local StatusLabel = Instance.new("TextLabel")
 local StatusCorner = Instance.new("UICorner")
+
+local connections = {}
 
 ScreenGui.Name = "PiyapAutoClicker"
 ScreenGui.Parent = CoreGui
@@ -30,7 +37,7 @@ MainFrame.BackgroundTransparency = 0.05
 MainFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
 MainFrame.Size = UDim2.new(0, 250, 0, 195)
 MainFrame.Active = true
-MainFrame.ClipsDescendants = false
+MainFrame.ClipsDescendants = true 
 
 UICorner.CornerRadius = UDim.new(0, 12)
 UICorner.Parent = MainFrame
@@ -53,7 +60,7 @@ Glow.ImageTransparency = 1
 Title.Name = "Title"
 Title.Parent = MainFrame
 Title.BackgroundTransparency = 1.000
-Title.Size = UDim2.new(1, 0, 0, 50)
+Title.Size = UDim2.new(1, -40, 0, 50)
 Title.Font = Enum.Font.GothamBlack
 Title.Text = "PIYAP CLICKER"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -65,6 +72,17 @@ TitleGradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 80, 255))
 })
 TitleGradient.Parent = Title
+
+MinButton.Name = "MinButton"
+MinButton.Parent = MainFrame
+MinButton.BackgroundTransparency = 1
+MinButton.Position = UDim2.new(1, -35, 0, 10)
+MinButton.Size = UDim2.new(0, 30, 0, 30)
+MinButton.Font = Enum.Font.GothamBold
+MinButton.Text = "-"
+MinButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MinButton.TextSize = 20
+MinButton.ZIndex = 2
 
 CPSInput.Name = "CPSInput"
 CPSInput.Parent = MainFrame
@@ -121,38 +139,50 @@ local function tween(obj, props, time, style, dir)
     return tw
 end
 
-CPSInput.MouseEnter:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end)
-CPSInput.MouseLeave:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end)
-PosLabel.MouseEnter:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end)
-PosLabel.MouseLeave:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end)
+table.insert(connections, CPSInput.MouseEnter:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end))
+table.insert(connections, CPSInput.MouseLeave:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end))
+table.insert(connections, PosLabel.MouseEnter:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end))
+table.insert(connections, PosLabel.MouseLeave:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end))
 
 local dragToggle, dragStart, startPos
-MainFrame.InputBegan:Connect(function(input)
+table.insert(connections, MainFrame.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragToggle = true
         dragStart = input.Position
         startPos = MainFrame.Position
     end
-end)
+end))
 
-UserInputService.InputChanged:Connect(function(input)
+table.insert(connections, UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement and dragToggle then
         local delta = input.Position - dragStart
         tween(MainFrame, {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)}, 0.15, Enum.EasingStyle.Linear)
     end
-end)
+end))
 
-UserInputService.InputEnded:Connect(function(input)
+table.insert(connections, UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragToggle = false
     end
-end)
+end))
 
 local clicking = false
 local clickConnection
 local activeGlowTween
 local targetX, targetY = 0, 0
 local positionSet = false
+local minimized = false
+
+table.insert(connections, MinButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        MinButton.Text = "+"
+        tween(MainFrame, {Size = UDim2.new(0, 250, 0, 50)}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    else
+        MinButton.Text = "-"
+        tween(MainFrame, {Size = UDim2.new(0, 250, 0, 195)}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    end
+end))
 
 local function toggleAutoClicker()
     clicking = not clicking
@@ -196,12 +226,14 @@ local function toggleAutoClicker()
     end
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
     if input.KeyCode == Enum.KeyCode.K then
-        tween(MainFrame, {Size = UDim2.new(0, 235, 0, 185)}, 0.08, Enum.EasingStyle.Sine)
-        task.delay(0.08, function() tween(MainFrame, {Size = UDim2.new(0, 250, 0, 195)}, 0.2, Enum.EasingStyle.Back) end)
+        if not minimized then
+            tween(MainFrame, {Size = UDim2.new(0, 235, 0, 185)}, 0.08, Enum.EasingStyle.Sine)
+            task.delay(0.08, function() tween(MainFrame, {Size = UDim2.new(0, 250, 0, 195)}, 0.2, Enum.EasingStyle.Back) end)
+        end
         toggleAutoClicker()
         
     elseif input.KeyCode == Enum.KeyCode.P then
@@ -213,10 +245,20 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
         tween(PosLabel, {TextColor3 = Color3.fromRGB(0, 220, 255)}, 0.1)
         task.delay(0.2, function() tween(PosLabel, {TextColor3 = Color3.fromRGB(160, 160, 180)}, 0.3) end)
         
-        tween(MainFrame, {Rotation = 2}, 0.05)
-        task.delay(0.05, function() tween(MainFrame, {Rotation = 0}, 0.15) end)
+        if not minimized then
+            tween(MainFrame, {Rotation = 2}, 0.05)
+            task.delay(0.05, function() tween(MainFrame, {Rotation = 0}, 0.15) end)
+        end
     end
-end)
+end))
+
+getgenv().PiyapClicker_Cleanup = function()
+    for _, conn in ipairs(connections) do
+        if conn then conn:Disconnect() end
+    end
+    if clickConnection then clickConnection:Disconnect() end
+    if ScreenGui then ScreenGui:Destroy() end
+end
 
 MainFrame.Position = UDim2.new(0.5, -125, 0.45, -100)
 MainFrame.GroupTransparency = 1
