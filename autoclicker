@@ -1,0 +1,223 @@
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local UIStroke = Instance.new("UIStroke")
+local Title = Instance.new("TextLabel")
+local TitleGradient = Instance.new("UIGradient")
+local Glow = Instance.new("ImageLabel")
+local CPSInput = Instance.new("TextBox")
+local InputCorner = Instance.new("UICorner")
+local PosLabel = Instance.new("TextLabel")
+local PosCorner = Instance.new("UICorner")
+local StatusLabel = Instance.new("TextLabel")
+local StatusCorner = Instance.new("UICorner")
+
+ScreenGui.Name = "PiyapAutoClicker"
+ScreenGui.Parent = CoreGui
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+MainFrame.BackgroundTransparency = 0.05
+MainFrame.Position = UDim2.new(0.5, -125, 0.5, -100)
+MainFrame.Size = UDim2.new(0, 250, 0, 195)
+MainFrame.Active = true
+MainFrame.ClipsDescendants = false
+
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainFrame
+
+UIStroke.Parent = MainFrame
+UIStroke.Color = Color3.fromRGB(50, 50, 70)
+UIStroke.Thickness = 1.5
+UIStroke.Transparency = 0.2
+
+Glow.Name = "Glow"
+Glow.Parent = MainFrame
+Glow.BackgroundTransparency = 1
+Glow.Position = UDim2.new(0, -15, 0, -15)
+Glow.Size = UDim2.new(1, 30, 1, 30)
+Glow.ZIndex = 0
+Glow.Image = "rbxassetid://5028857084"
+Glow.ImageColor3 = Color3.fromRGB(0, 200, 255)
+Glow.ImageTransparency = 1
+
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1.000
+Title.Size = UDim2.new(1, 0, 0, 50)
+Title.Font = Enum.Font.GothamBlack
+Title.Text = "PIYAP CLICKER"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 22.000
+Title.ZIndex = 2
+
+TitleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 220, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 80, 255))
+})
+TitleGradient.Parent = Title
+
+CPSInput.Name = "CPSInput"
+CPSInput.Parent = MainFrame
+CPSInput.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+CPSInput.Position = UDim2.new(0.1, 0, 0, 55)
+CPSInput.Size = UDim2.new(0.8, 0, 0, 35)
+CPSInput.Font = Enum.Font.GothamSemibold
+CPSInput.PlaceholderText = "CPS (e.g. 100)"
+CPSInput.Text = "100"
+CPSInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+CPSInput.TextSize = 14.000
+CPSInput.BorderSizePixel = 0
+CPSInput.ZIndex = 2
+
+InputCorner.CornerRadius = UDim.new(0, 8)
+InputCorner.Parent = CPSInput
+
+PosLabel.Name = "PosLabel"
+PosLabel.Parent = MainFrame
+PosLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+PosLabel.Position = UDim2.new(0.1, 0, 0, 100)
+PosLabel.Size = UDim2.new(0.8, 0, 0, 35)
+PosLabel.Font = Enum.Font.GothamMedium
+PosLabel.Text = "Hover & Press [P]"
+PosLabel.TextColor3 = Color3.fromRGB(160, 160, 180)
+PosLabel.TextSize = 13.000
+PosLabel.BorderSizePixel = 0
+PosLabel.ZIndex = 2
+
+PosCorner.CornerRadius = UDim.new(0, 8)
+PosCorner.Parent = PosLabel
+
+StatusLabel.Name = "StatusLabel"
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundColor3 = Color3.fromRGB(35, 18, 22)
+StatusLabel.Position = UDim2.new(0.1, 0, 0, 145)
+StatusLabel.Size = UDim2.new(0.8, 0, 0, 35)
+StatusLabel.Font = Enum.Font.GothamBlack
+StatusLabel.Text = "OFF [K]"
+StatusLabel.TextColor3 = Color3.fromRGB(255, 70, 70)
+StatusLabel.TextSize = 15.000
+StatusLabel.BorderSizePixel = 0
+StatusLabel.ZIndex = 2
+
+StatusCorner.CornerRadius = UDim.new(0, 8)
+StatusCorner.Parent = StatusLabel
+
+local function tween(obj, props, time, style, dir)
+    time = time or 0.3
+    style = style or Enum.EasingStyle.Quart
+    dir = dir or Enum.EasingDirection.Out
+    local tw = TweenService:Create(obj, TweenInfo.new(time, style, dir), props)
+    tw:Play()
+    return tw
+end
+
+CPSInput.MouseEnter:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end)
+CPSInput.MouseLeave:Connect(function() tween(CPSInput, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end)
+PosLabel.MouseEnter:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(30, 30, 38)}, 0.2) end)
+PosLabel.MouseLeave:Connect(function() tween(PosLabel, {BackgroundColor3 = Color3.fromRGB(22, 22, 28)}, 0.2) end)
+
+local dragToggle, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragToggle = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement and dragToggle then
+        local delta = input.Position - dragStart
+        tween(MainFrame, {Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)}, 0.15, Enum.EasingStyle.Linear)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragToggle = false
+    end
+end)
+
+local clicking = false
+local clickConnection
+local activeGlowTween
+local targetX, targetY = 0, 0
+local positionSet = false
+
+local function toggleAutoClicker()
+    clicking = not clicking
+    
+    if clicking then
+        if not positionSet then
+            local mousePos = UserInputService:GetMouseLocation()
+            targetX, targetY = mousePos.X, mousePos.Y
+        end
+        
+        StatusLabel.Text = "ON [K]"
+        tween(StatusLabel, {BackgroundColor3 = Color3.fromRGB(18, 35, 22), TextColor3 = Color3.fromRGB(70, 255, 100)}, 0.3)
+        tween(UIStroke, {Color = Color3.fromRGB(0, 200, 255), Thickness = 2}, 0.3)
+        
+        activeGlowTween = TweenService:Create(Glow, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {ImageTransparency = 0.5})
+        activeGlowTween:Play()
+        
+        local cps = tonumber(CPSInput.Text) or 100
+        local accumulatedTime = 0
+        
+        clickConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            accumulatedTime += (cps * deltaTime)
+            while accumulatedTime >= 1 do
+                VirtualInputManager:SendMouseButtonEvent(targetX, targetY, 0, true, game, 1)
+                VirtualInputManager:SendMouseButtonEvent(targetX, targetY, 0, false, game, 1)
+                accumulatedTime -= 1
+            end
+        end)
+    else
+        StatusLabel.Text = "OFF [K]"
+        tween(StatusLabel, {BackgroundColor3 = Color3.fromRGB(35, 18, 22), TextColor3 = Color3.fromRGB(255, 70, 70)}, 0.3)
+        tween(UIStroke, {Color = Color3.fromRGB(50, 50, 70), Thickness = 1.5}, 0.3)
+        
+        if activeGlowTween then activeGlowTween:Cancel() end
+        tween(Glow, {ImageTransparency = 1}, 0.5)
+        
+        if clickConnection then
+            clickConnection:Disconnect()
+            clickConnection = nil
+        end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.K then
+        tween(MainFrame, {Size = UDim2.new(0, 235, 0, 185)}, 0.08, Enum.EasingStyle.Sine)
+        task.delay(0.08, function() tween(MainFrame, {Size = UDim2.new(0, 250, 0, 195)}, 0.2, Enum.EasingStyle.Back) end)
+        toggleAutoClicker()
+        
+    elseif input.KeyCode == Enum.KeyCode.P then
+        local mousePos = UserInputService:GetMouseLocation()
+        targetX, targetY = mousePos.X, mousePos.Y
+        positionSet = true
+        PosLabel.Text = string.format("Set: %d, %d", targetX, targetY)
+        
+        tween(PosLabel, {TextColor3 = Color3.fromRGB(0, 220, 255)}, 0.1)
+        task.delay(0.2, function() tween(PosLabel, {TextColor3 = Color3.fromRGB(160, 160, 180)}, 0.3) end)
+        
+        tween(MainFrame, {Rotation = 2}, 0.05)
+        task.delay(0.05, function() tween(MainFrame, {Rotation = 0}, 0.15) end)
+    end
+end)
+
+MainFrame.Position = UDim2.new(0.5, -125, 0.45, -100)
+MainFrame.GroupTransparency = 1
+tween(MainFrame, {Position = UDim2.new(0.5, -125, 0.5, -100), GroupTransparency = 0}, 0.7, Enum.EasingStyle.Exponential)
