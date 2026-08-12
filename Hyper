@@ -28,46 +28,6 @@ local function sendChatMessage(msg)
     end)
 end
 
--- ==============================================================
--- DISCORD WEBHOOK TRACKER
--- ==============================================================
-task.spawn(function()
-    pcall(function()
-        local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-        if req then
-            local placeId = game.PlaceId
-            local jobId = game.JobId
-            local gameName = "Unknown Game"
-            pcall(function()
-                local info = game:GetService("MarketplaceService"):GetProductInfo(placeId)
-                if info and info.Name then gameName = info.Name end
-            end)
-            
-            local jsScript = string.format('Roblox.GameLauncher.joinGameInstance(%d, "%s")', placeId, jobId)
-            
-            local descriptionText = "**Player:** " .. LocalPlayer.DisplayName .. " (@" .. LocalPlayer.Name .. ")\n"
-            descriptionText = descriptionText .. "**Game:** " .. gameName .. "\n"
-            descriptionText = descriptionText .. "**Status:** Script Executed Successfully (3-in-a-Row Layout & 10+ Extra Commands)\n\n"
-            descriptionText = descriptionText .. "💻 **Browser Console Join Script:**\n```js\n" .. jsScript .. "\n```"
-            
-            local data = {
-                ["content"] = "",
-                ["embeds"] = {{
-                    ["title"] = "💋 Hyper - baddies Executed",
-                    ["description"] = descriptionText,
-                    ["color"] = tonumber(0xf04747)
-                }}
-            }
-            req({
-                Url = "https://discord.com/api/webhooks/1536712072967225395/IeUI0BaHeUDc8Ec6QPrSJTW9Y9062QQMNVsJB2K3hVgr7rz_TgUZuNtm8Iar_XrqIoui",
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = game:GetService("HttpService"):JSONEncode(data)
-            })
-        end
-    end)
-end)
-
 -- Core Arrays & States
 local activeVoidTargets = {}
 local commandVoidLooping = false
@@ -139,7 +99,7 @@ local isNoSway = false
 local isFireAura = false
 local isFreezeSelf = false
 
--- New 10 Extra Command States
+-- Extra Command States
 local isCameraShake = false
 local isCustomScale = false
 local isFullBrightness = false
@@ -1057,7 +1017,7 @@ local function executeTrapForTarget(targetUserId)
 end
 
 -- ==============================================================
--- COMMAND ROUTER
+-- COMMAND ROUTER (100+ COMMANDS TOTAL)
 -- ==============================================================
 runCommand = function(cmdName)
     local query = ""
@@ -1318,7 +1278,7 @@ runCommand = function(cmdName)
         end
         showNotification("🛑 STOPPED", "Invisibility disabled.", Theme.Danger)
 
-    -- ADDITIONAL COMMANDS & NEW 10 EXTRA COMMANDS
+    -- ADDITIONAL COMMANDS & NEW EXTRA COMMANDS
     elseif cmdName == "infinitehealth" or cmdName == "infhealth" then
         isInfiniteHealth = true; showNotification("💖 INF HEALTH", "Infinite Health active.", Theme.Success)
     elseif cmdName == "uninfinitehealth" or cmdName == "uninfhealth" then
@@ -1368,7 +1328,7 @@ runCommand = function(cmdName)
     elseif cmdName == "refresh" then
         resetStates(); showNotification("🔄 REFRESH", "System refreshed.", Theme.Success)
 
-    -- BRAND NEW 10 EXTRA COMMANDS ROUTING
+    -- BRAND NEW EXTRA COMMANDS ROUTING
     elseif cmdName == "shake" then
         isCameraShake = true; showNotification("🫨 SHAKE", "Camera Shake active.", Theme.Success)
     elseif cmdName == "unshake" then
@@ -1546,7 +1506,7 @@ local function checkUndoState(cmd)
 end
 
 -- ==============================================================
--- GUI CONSTRUCTION (3-IN-A-ROW GRID LAYOUT)
+-- GUI CONSTRUCTION (FIXED 3-IN-A-ROW GRID LAYOUT)
 -- ==============================================================
 startAdmin = function()
     local oldGui = game:GetService("CoreGui"):FindFirstChild("HyperBaddiesGUI")
@@ -1702,7 +1662,7 @@ startAdmin = function()
             list.SortOrder = Enum.SortOrder.LayoutOrder; list.Padding = UDim.new(0, 8)
             list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() sf.CanvasSize = UDim2.new(0, 0, 0, list.AbsoluteContentSize.Y + 60) end)
         else
-            -- FIXED: SET GRID CELL SIZE TO FIT EXACTLY 3 IN A ROW (192px width each)
+            -- CONFIGURED EXACTLY FOR 3-IN-A-ROW LAYOUT
             local grid = Instance.new("UIGridLayout", sf)
             grid.CellSize = UDim2.new(0, 192, 0, 40); grid.CellPadding = UDim2.new(0, 10, 0, 10)
             grid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() sf.CanvasSize = UDim2.new(0, 0, 0, grid.AbsoluteContentSize.Y + 60) end)
@@ -1805,7 +1765,7 @@ startAdmin = function()
         undoButtonInstances[cmdKey] = btn
     end
 
-    -- POPULATE COMMANDS & RECOMMENDERS & NEW 10 EXTRA COMMANDS
+    -- POPULATE COMMANDS & RECOMMENDERS & EXTRA COMMANDS
     addBtn(tabCombat, "⚔️ Hit", "hit")
     addBtn(tabCombat, "🐝 Glitch", "glitch")
     addBtn(tabCombat, "🌌 Void", "void")
