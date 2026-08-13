@@ -33,25 +33,6 @@ local function addConn(connection)
 	return connection
 end
 
--- CUSTOM RAYCAST (PIERCES INVISIBLE WALLS & GLASS)
-local function checkLineOfSight(origin, targetPos, ignoreList)
-	local direction = targetPos - origin
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = ignoreList
-	
-	local hit = workspace:Raycast(origin, direction, raycastParams)
-	if hit then
-		-- If it hits an invisible barrier, glass, or non-colliding part, ignore it and cast again!
-		if hit.Instance.Transparency > 0.5 or not hit.Instance.CanCollide or hit.Instance.Name == "Glass" then
-			table.insert(ignoreList, hit.Instance)
-			return checkLineOfSight(origin, targetPos, ignoreList)
-		end
-		return false -- Hit a solid, visible wall
-	end
-	return true -- Clear sight!
-end
-
 -- GUI SETUP
 local Piyap = Instance.new("ScreenGui")
 Piyap.Name = "Piyap"
@@ -723,21 +704,6 @@ local function findSheriff()
 	return nil
 end
 
-local function findNearestPlayer()
-	local nearest = nil
-	local shortestDist = math.huge
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-			local dist = (LocalPlayer.Character.PrimaryPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-			if dist < shortestDist then
-				shortestDist = dist
-				nearest = p
-			end
-		end
-	end
-	return nearest
-end
-
 local ESPData = {Players = false, Gun = false, Traps = false, HideSelf = false}
 local Highlights = {}
 local AutoGetGun = false
@@ -818,41 +784,118 @@ end))
 
 local ShootOffset = 2.8
 
--- Safe Kill Aura loop & Auto Fling
-task.spawn(function()
-	while task.wait(0.5) do
-		if not getgenv().PiyapRunning then break end
-		
-		-- Kill Aura
-		if KillAuraActive and findMurderer() == LocalPlayer then
-			local char = LocalPlayer.Character
-			if char then
-				local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-				if knife then
-					char.Humanoid:EquipTool(knife)
-					local slashed = false
-					for _, p in ipairs(Players:GetPlayers()) do
-						if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-							local targetHrp = p.Character.HumanoidRootPart
-							local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
-							if dist <= KillAuraRange then
-								targetHrp.Anchored = true
-								targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
-								slashed = true
-								task.delay(0.3, function()
-									if targetHrp then targetHrp.Anchored = false end
-								end)
-							end
-						end
-					end
-					if slashed and knife:FindFirstChild("Stab") then
-						knife.Stab:FireServer("Slash")
+-- Auto Throw (With direct trajectory, ignores walls completely)
+local function throwKnifeAtClosest()
+	if findMurderer() ~= LocalPlayer then return end
+	local char = LocalPlayer.Character
+	if not char or not char:FindFirstChild("PrimaryPart") then return end
+	local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
+	if not knife then return end
+	
+	local nearest = nil
+	local shortestDist = math.huge
+	local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
+	
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local hum = p.Character:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				local targetHRP = p.Character.HumanoidRootPart
+				local dist = (originPos - targetHRP.Position).Magnitude
+				if dist < shortestDist then
+					local ignoreList = {char, p.Character, workspace.CurrentCamera}
+					if checkLineOfSight(originPos, targetHRP.Position, ignoreList) then
+						shortestDist = dist
+						nearest = p
 					end
 				end
 			end
 		end
+	end
+	
+	if nearest then
+		if knife.Parent ~= char then
+			char.Humanoid:EquipTool(knife)
+			task.wait(0.1) -- Ensure it has time to be equipped and registered
+		end
 		
-		-- Auto Fling Toggles
+		local targetHRP = nearest.Character.HumanoidRootPart
+		local targetPos = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * (ShootOffset / 15))
+		
+		local originCF = CFrame.lookAt(originPos, targetPos)
+		local targetCF = CFrame.new(targetPos)
+		
+		local events = knife:FindFirstChild("Events")
+		if events and events:FindFirstChild("KnifeThrown") then
+			events.KnifeThrown:FireServer(originCF, targetCF)
+		elseif knife:FindFirstChild("Throw") then
+			knife.Throw:FireServer(originCF, targetCF)
+		end
+	end
+end
+
+task.spawn(function()
+	while task.wait(1.5) do
+		if not getgenv().PiyapRunning then break end
+		if AutoThrowActive then throwKnifeAtClosest() end
+	end
+end)
+
+-- Unified Combat Background Loop (Kill Aura & Hold Hostage)
+task.spawn(function()
+	while task.wait(0.3) do
+		if not getgenv().PiyapRunning then break end
+		local char = LocalPlayer.Character
+		if not char then continue end
+		
+		local isMurd = findMurderer() == LocalPlayer
+		
+		if isMurd and (KillAuraActive or HoldHostageActive) then
+			local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
+			if knife then
+				if knife.Parent == LocalPlayer.Backpack then char.Humanoid:EquipTool(knife) end
+				local slashed = false
+				
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+						local hum = p.Character:FindFirstChildOfClass("Humanoid")
+						if hum and hum.Health > 0 then
+							local targetHrp = p.Character.HumanoidRootPart
+							local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
+							
+							local shouldGrab = false
+							if HoldHostageActive then
+								shouldGrab = true
+							elseif KillAuraActive and dist <= KillAuraRange then
+								shouldGrab = true
+							end
+							
+							if shouldGrab then
+								targetHrp.Anchored = true
+								targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
+								slashed = true
+								
+								-- Quickly unanchor so game physics updates properly
+								task.delay(0.3, function()
+									if targetHrp and not HoldHostageActive then targetHrp.Anchored = false end
+								end)
+							end
+						end
+					end
+				end
+				
+				if slashed and knife:FindFirstChild("Stab") and KillAuraActive then
+					knife.Stab:FireServer("Slash")
+				end
+			end
+		end
+	end
+end)
+
+-- Auto Fling Loop
+task.spawn(function()
+	while task.wait(0.5) do
+		if not getgenv().PiyapRunning then break end
 		if AutoFlingMurdActive and not getgenv().FlingActive then
 			local m = findMurderer()
 			if m and m ~= LocalPlayer and m.Character then SkidFling(m, true) end
@@ -865,21 +908,27 @@ task.spawn(function()
 end)
 
 local lastAutoShoot = 0
-local lastAutoThrow = 0
 
 addConn(RunService.Stepped:Connect(function()
 	if not getgenv().PiyapRunning then return end
 	local char = LocalPlayer.Character
 	if not char then return end
 
-	-- Hold Hostage overrides physics locally in Stepped
-	if HoldHostageActive and findMurderer() == LocalPlayer then
-		if char:FindFirstChild("PrimaryPart") then
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-					local hrp = p.Character.HumanoidRootPart
-					hrp.Anchored = true
-					hrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
+	-- New Anti-Fling: Removes collisions from your own body locally to stop touch events
+	if AntiFlingActive then
+		for _, partName in ipairs({"Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Head"}) do
+			local part = char:FindFirstChild(partName)
+			if part and part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+		
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character then
+				for _, part in ipairs(p.Character:GetDescendants()) do
+					if part:IsA("BasePart") and part.CanCollide then
+						part.CanCollide = false
+					end
 				end
 			end
 		end
@@ -904,7 +953,10 @@ addConn(RunService.Heartbeat:Connect(function()
 				local ignoreList = {char, murd.Character, workspace.CurrentCamera}
 				
 				if checkLineOfSight(myHRP.Position, murdHRP.Position, ignoreList) then
-					char.Humanoid:EquipTool(gun)
+					if gun.Parent ~= char then
+						char.Humanoid:EquipTool(gun)
+						task.wait(0.1)
+					end
 					
 					local originPos = myHRP.Position
 					local targetPos = murdHRP.Position + (murdHRP.AssemblyLinearVelocity * (ShootOffset / 15))
@@ -925,65 +977,9 @@ addConn(RunService.Heartbeat:Connect(function()
 		end
 	end
 	
-	-- Auto Knife Throw (Wall Check PIERCES INVISIBLE/GLASS)
-	if AutoThrowActive and findMurderer() == LocalPlayer and tick() - lastAutoThrow > 1.5 then
-		local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-		if knife then
-			local nearest = nil
-			local shortestDist = math.huge
-			local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or myHRP.Position
-			
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-					local hum = p.Character:FindFirstChildOfClass("Humanoid")
-					if hum and hum.Health > 0 then
-						local targetHRP = p.Character.HumanoidRootPart
-						local dist = (originPos - targetHRP.Position).Magnitude
-						if dist < shortestDist then
-							local ignoreList = {char, p.Character, workspace.CurrentCamera}
-							if checkLineOfSight(originPos, targetHRP.Position, ignoreList) then
-								shortestDist = dist
-								nearest = p
-							end
-						end
-					end
-				end
-			end
-			
-			if nearest then
-				char.Humanoid:EquipTool(knife)
-				local targetHRP = nearest.Character.HumanoidRootPart
-				local targetPos = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * (ShootOffset / 15))
-				
-				local originCF = CFrame.lookAt(originPos, targetPos)
-				local targetCF = CFrame.new(targetPos)
-				
-				local events = knife:FindFirstChild("Events")
-				if events and events:FindFirstChild("KnifeThrown") then
-					events.KnifeThrown:FireServer(originCF, targetCF)
-				elseif knife:FindFirstChild("Throw") then
-					knife.Throw:FireServer(originCF, targetCF)
-				end
-				lastAutoThrow = tick()
-			end
-		end
-	end
-	
 	if NoclipActive then
 		for _, p in pairs(char:GetDescendants()) do
 			if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
-		end
-	end
-	
-	if AntiFlingActive then
-		-- Disable collision locally for other players so they ghost through you
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= LocalPlayer and p.Character then
-				for _, partName in ipairs({"Head", "Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart"}) do
-					local part = p.Character:FindFirstChild(partName)
-					if part and part:IsA("BasePart") then part.CanCollide = false end
-				end
-			end
 		end
 	end
 end))
@@ -1081,11 +1077,11 @@ createButton(CombatPage, "Kill All", function()
 	if not knife then sendNotification("Error", "Knife not found!", 3) return end
 	
 	char.Humanoid:EquipTool(knife)
-	task.wait(0.1)
 
 	task.spawn(function()
-		for i = 1, 3 do
+		for i = 1, 10 do
 			if not getgenv().PiyapRunning then break end
+			local slashed = false
 			
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -1094,21 +1090,19 @@ createButton(CombatPage, "Kill All", function()
 						local targetHrp = p.Character.HumanoidRootPart
 						targetHrp.Anchored = true
 						targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
+						slashed = true
+						
+						task.delay(0.3, function()
+							if targetHrp then targetHrp.Anchored = false end
+						end)
 					end
 				end
 			end
 			
-			task.wait(0.05)
-			if knife:FindFirstChild("Stab") then
+			if slashed and knife:FindFirstChild("Stab") then
 				knife.Stab:FireServer("Slash")
 			end
-			task.wait(0.4)
-		end
-		
-		for _, p in ipairs(Players:GetPlayers()) do
-			if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-				p.Character.HumanoidRootPart.Anchored = false
-			end
+			task.wait(0.3)
 		end
 		sendNotification("Combat", "Kill All complete!", 3)
 	end)
