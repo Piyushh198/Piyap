@@ -1,4 +1,13 @@
 local CoreGui = game:GetService("CoreGui")
+
+-- Destroy old GUI to prevent overlaps when re-executing
+if CoreGui:FindFirstChild("Piyap") then
+	CoreGui.Piyap:Destroy()
+end
+if CoreGui:FindFirstChild("PiyapNotifs") then
+	CoreGui.PiyapNotifs:Destroy()
+end
+
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -812,8 +821,19 @@ task.spawn(function()
 		end
 		
 		if AntiFlingActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			-- Disable collisions of other players to stop them touching you
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and p.Character then
+					for _, part in ipairs(p.Character:GetDescendants()) do
+						if part:IsA("BasePart") and part.CanCollide then
+							part.CanCollide = false
+						end
+					end
+				end
+			end
+			
 			local hrp = LocalPlayer.Character.HumanoidRootPart
-			if hrp.AssemblyLinearVelocity.Magnitude > 250 or hrp.AssemblyAngularVelocity.Magnitude > 250 then
+			if hrp.AssemblyLinearVelocity.Magnitude > 50 or hrp.AssemblyAngularVelocity.Magnitude > 50 then
 				hrp.AssemblyLinearVelocity = Vector3.zero
 				hrp.AssemblyAngularVelocity = Vector3.zero
 			end
@@ -887,24 +907,20 @@ createButton(CombatPage, "Kill All (Murderer)", function()
 	
 	char.Humanoid:EquipTool(knife)
 	task.wait(0.1)
-	local handle = knife:FindFirstChild("Handle")
 
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-			local targetHrp = p.Character.HumanoidRootPart
-			targetHrp.Anchored = true
-			targetHrp.CFrame = char.HumanoidRootPart.CFrame + char.HumanoidRootPart.CFrame.LookVector * 3
-			if firetouchinterest and handle then
-				firetouchinterest(handle, targetHrp, 0)
-				firetouchinterest(handle, targetHrp, 1)
-			end
+			p.Character.HumanoidRootPart.Anchored = true
+			p.Character.HumanoidRootPart.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
 		end
 	end
+	
+	task.wait(0.1)
 
 	if knife:FindFirstChild("Stab") then
 		knife.Stab:FireServer("Slash")
 	end
-	sendNotification("Combat", "Brought all players to you and killed them!", 3)
+	sendNotification("Combat", "Brought all players to you and slashed!", 3)
 end)
 
 createToggle(CombatPage, "Kill Aura (Murderer)", false, function(state)
