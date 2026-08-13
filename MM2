@@ -1,4 +1,29 @@
 local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TextChatService = game:GetService("TextChatService")
+local LocalPlayer = Players.LocalPlayer
+
+-- CLEANUP PREVIOUS EXECUTIONS
+if getgenv().PiyapRunning ~= nil then
+	getgenv().PiyapRunning = false
+	task.wait(0.1) -- Allow old loops to break
+end
+getgenv().PiyapRunning = true
+
+if getgenv().PiyapConnections then
+	for _, conn in ipairs(getgenv().PiyapConnections) do
+		if conn.Disconnect then conn:Disconnect() end
+	end
+end
+getgenv().PiyapConnections = {}
+
+local function addConn(connection)
+	table.insert(getgenv().PiyapConnections, connection)
+	return connection
+end
 
 if CoreGui:FindFirstChild("Piyap") then
 	CoreGui.Piyap:Destroy()
@@ -7,13 +32,7 @@ if CoreGui:FindFirstChild("PiyapNotifs") then
 	CoreGui.PiyapNotifs:Destroy()
 end
 
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local TextChatService = game:GetService("TextChatService")
-local LocalPlayer = Players.LocalPlayer
-
+-- GUI SETUP
 local Piyap = Instance.new("ScreenGui")
 Piyap.Name = "Piyap"
 Piyap.Parent = CoreGui
@@ -86,8 +105,10 @@ local function sendNotification(title, text, duration)
 	createTween(NotifFrame, {Size = UDim2.new(1, 0, 0, 60), GroupTransparency = 0}, 0.4)
 
 	task.delay(duration, function()
-		local outTween = createTween(NotifFrame, {Size = UDim2.new(1, 50, 0, 60), GroupTransparency = 1}, 0.4)
-		outTween.Completed:Once(function() NotifFrame:Destroy() end)
+		if NotifFrame then
+			local outTween = createTween(NotifFrame, {Size = UDim2.new(1, 50, 0, 60), GroupTransparency = 1}, 0.4)
+			outTween.Completed:Once(function() NotifFrame:Destroy() end)
+		end
 	end)
 end
 
@@ -173,32 +194,36 @@ local openDragging, openDragInput, openDragStart, openStartPos
 local isGuiOpen = false
 local hasDraggedOpen = false
 
-OpenButton.InputBegan:Connect(function(input)
+addConn(OpenButton.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		openDragging = true
 		hasDraggedOpen = false
 		openDragStart = input.Position
 		openStartPos = OpenButton.Position
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then openDragging = false end
-		end)
+		local endConn
+		endConn = addConn(input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then 
+				openDragging = false
+				if endConn then endConn:Disconnect() end
+			end
+		end))
 	end
-end)
+end))
 
-OpenButton.InputChanged:Connect(function(input)
+addConn(OpenButton.InputChanged:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then openDragInput = input end
-end)
+end))
 
-UserInputService.InputChanged:Connect(function(input)
+addConn(UserInputService.InputChanged:Connect(function(input)
 	if input == openDragInput and openDragging then
 		local delta = input.Position - openDragStart
 		if delta.Magnitude > 3 then hasDraggedOpen = true end
 		local targetPos = UDim2.new(openStartPos.X.Scale, openStartPos.X.Offset + delta.X, openStartPos.Y.Scale, openStartPos.Y.Offset + delta.Y)
 		TweenService:Create(OpenButton, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {Position = targetPos}):Play()
 	end
-end)
+end))
 
-OpenButton.InputEnded:Connect(function(input)
+addConn(OpenButton.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		if not hasDraggedOpen then
 			isGuiOpen = not isGuiOpen
@@ -213,7 +238,7 @@ OpenButton.InputEnded:Connect(function(input)
 			end
 		end
 	end
-end)
+end))
 
 local tabs = {}
 local pages = {}
@@ -263,15 +288,15 @@ local function createTab(name, isFirst)
 	PagePadding.PaddingRight = UDim.new(0, 15)
 	PagePadding.PaddingBottom = UDim.new(0, 15)
 	
-	PageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	addConn(PageList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 		ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, PageList.AbsoluteContentSize.Y + 30)
-	end)
+	end))
 	
 	if isFirst then activePage = TabPage end
 	table.insert(tabs, TabButton)
 	table.insert(pages, TabPage)
 	
-	TabButton.MouseButton1Click:Connect(function()
+	addConn(TabButton.MouseButton1Click:Connect(function()
 		if activePage == TabPage then return end
 		for i, v in pairs(tabs) do
 			createTween(v, {BackgroundColor3 = Color3.fromRGB(25, 25, 28), TextColor3 = Color3.fromRGB(150, 150, 150)}, 0.3)
@@ -288,7 +313,7 @@ local function createTab(name, isFirst)
 		TabPage.Position = UDim2.new(0, 20, 0, 0)
 		createTween(TabPage, {GroupTransparency = 0, Position = UDim2.new(0, 0, 0, 0)}, 0.35)
 		activePage = TabPage
-	end)
+	end))
 	
 	return ScrollFrame
 end
@@ -312,17 +337,17 @@ local function createButton(parent, text, callback)
 	BtnStroke.Parent = Btn
 	BtnStroke.Color = Color3.fromRGB(70, 70, 75)
 
-	Btn.MouseEnter:Connect(function()
+	addConn(Btn.MouseEnter:Connect(function()
 		createTween(Btn, {BackgroundColor3 = Color3.fromRGB(45, 45, 52), TextColor3 = Color3.fromRGB(255, 255, 255)}, 0.2)
 		createTween(BtnStroke, {Color = Color3.fromRGB(100, 100, 110)}, 0.2)
-	end)
-	Btn.MouseLeave:Connect(function()
+	end))
+	addConn(Btn.MouseLeave:Connect(function()
 		createTween(Btn, {BackgroundColor3 = Color3.fromRGB(35, 35, 40), TextColor3 = Color3.fromRGB(220, 220, 220)}, 0.2)
 		createTween(BtnStroke, {Color = Color3.fromRGB(70, 70, 75)}, 0.2)
-	end)
-	Btn.MouseButton1Click:Connect(function()
+	end))
+	addConn(Btn.MouseButton1Click:Connect(function()
 		callback()
-	end)
+	end))
 end
 
 local function createToggle(parent, text, defaultState, callback)
@@ -372,7 +397,7 @@ local function createToggle(parent, text, defaultState, callback)
 	CircleCorner.CornerRadius = UDim.new(1, 0)
 	CircleCorner.Parent = SwitchCircle
 
-	ToggleContainer.MouseButton1Click:Connect(function()
+	addConn(ToggleContainer.MouseButton1Click:Connect(function()
 		state = not state
 		callback(state)
 		
@@ -383,7 +408,7 @@ local function createToggle(parent, text, defaultState, callback)
 			createTween(SwitchBg, {BackgroundColor3 = Color3.fromRGB(25, 25, 28)}, 0.3)
 			createTween(SwitchCircle, {Position = UDim2.new(0, 2, 0.5, 0)}, 0.3)
 		end
-	end)
+	end))
 end
 
 local function createSlider(parent, text, min, max, default, callback)
@@ -455,24 +480,24 @@ local function createSlider(parent, text, min, max, default, callback)
 		callback(value)
 	end
 
-	DragButton.InputBegan:Connect(function(input)
+	addConn(DragButton.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
 			updateSlider(input)
 		end
-	end)
+	end))
 
-	UserInputService.InputChanged:Connect(function(input)
+	addConn(UserInputService.InputChanged:Connect(function(input)
 		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			updateSlider(input)
 		end
-	end)
+	end))
 
-	UserInputService.InputEnded:Connect(function(input)
+	addConn(UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = false
 		end
-	end)
+	end))
 end
 
 local function createTextBox(parent, labelText, placeholderText, callback)
@@ -513,34 +538,38 @@ local function createTextBox(parent, labelText, placeholderText, callback)
 	BoxCorner.CornerRadius = UDim.new(0, 4)
 	BoxCorner.Parent = TextBoxBox
 
-	TextBoxBox.FocusLost:Connect(function(enterPressed)
+	addConn(TextBoxBox.FocusLost:Connect(function(enterPressed)
 		if enterPressed then callback(TextBoxBox.Text) end
-	end)
+	end))
 end
 
 local mainDragging, mainDragInput, mainDragStart, mainStartPos
-TopBar.InputBegan:Connect(function(input)
+addConn(TopBar.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		mainDragging = true
 		mainDragStart = input.Position
 		mainStartPos = MainFrame.Position
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then mainDragging = false end
-		end)
+		local endConn
+		endConn = addConn(input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then 
+				mainDragging = false 
+				if endConn then endConn:Disconnect() end
+			end
+		end))
 	end
-end)
+end))
 
-TopBar.InputChanged:Connect(function(input)
+addConn(TopBar.InputChanged:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then mainDragInput = input end
-end)
+end))
 
-UserInputService.InputChanged:Connect(function(input)
+addConn(UserInputService.InputChanged:Connect(function(input)
 	if input == mainDragInput and mainDragging then
 		local delta = input.Position - mainDragStart
 		local targetPos = UDim2.new(mainStartPos.X.Scale, mainStartPos.X.Offset + delta.X, mainStartPos.Y.Scale, mainStartPos.Y.Offset + delta.Y)
 		TweenService:Create(MainFrame, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {Position = targetPos}):Play()
 	end
-end)
+end))
 
 --------------------------------------------------------------------------------
 -- FLING LOGIC (ADVANCED SkidFling ALGORITHM)
@@ -580,6 +609,7 @@ local function SkidFling(TargetPlayer, isMulti)
 		local SFBasePart = function(BasePart)
 			local TimeToWait, Time, Angle = 2, tick(), 0
 			repeat
+				if not getgenv().PiyapRunning then break end
 				if RootPart and THumanoid then
 					if BasePart.Velocity.Magnitude < 50 then
 						Angle = Angle + 100
@@ -634,6 +664,7 @@ local function SkidFling(TargetPlayer, isMulti)
 		
 		if getgenv().OldPos then
 			repeat
+				if not getgenv().PiyapRunning then break end
 				RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
 				Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
 				Humanoid:ChangeState("GettingUp")
@@ -695,6 +726,8 @@ local AutoThrowActive = false
 local NoclipActive = false
 local InstakillSheriff = false
 local AntiFlingActive = false
+local AutoShootSheriff = false
+local HoldHostageActive = false
 
 local function clearESP()
 	for _, h in pairs(Highlights) do h:Destroy() end
@@ -715,6 +748,7 @@ end
 
 task.spawn(function()
 	while task.wait(1) do
+		if not getgenv().PiyapRunning then break end
 		clearESP()
 		if ESPData.Players then
 			local murd = findMurderer()
@@ -750,7 +784,7 @@ task.spawn(function()
 	end
 end)
 
-workspace.DescendantAdded:Connect(function(ch)
+addConn(workspace.DescendantAdded:Connect(function(ch)
 	if ch.Name == "GunDrop" and AutoGetGun then
 		local prevPos = LocalPlayer.Character:GetPivot()
 		LocalPlayer.Character:PivotTo(ch.CFrame)
@@ -758,7 +792,7 @@ workspace.DescendantAdded:Connect(function(ch)
 		LocalPlayer.Character:PivotTo(prevPos)
 		sendNotification("Combat", "Automatically grabbed the dropped gun!", 3)
 	end
-end)
+end))
 
 local function throwKnifeAtClosest()
 	if findMurderer() ~= LocalPlayer then return end
@@ -777,67 +811,126 @@ end
 
 task.spawn(function()
 	while task.wait(1.5) do
+		if not getgenv().PiyapRunning then break end
 		if AutoThrowActive then throwKnifeAtClosest() end
 	end
 end)
 
-task.spawn(function()
-	RunService.Heartbeat:Connect(function()
-		if KillAuraActive and findMurderer() == LocalPlayer then
-			local char = LocalPlayer.Character
-			if not char then return end
-			local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-			if not knife then return end
+local ShootOffset = 2.8
+local lastAutoShoot = 0
+
+addConn(RunService.Heartbeat:Connect(function()
+	local char = LocalPlayer.Character
+	if not char then return end
+
+	if KillAuraActive and findMurderer() == LocalPlayer then
+		local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
+		if knife then
 			if knife.Parent == LocalPlayer.Backpack then
 				char.Humanoid:EquipTool(knife)
 			end
 			local handle = knife:FindFirstChild("Handle")
-			if not handle then return end
-
+			if handle then
+				for _, p in ipairs(Players:GetPlayers()) do
+					if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+						local targetHrp = p.Character.HumanoidRootPart
+						local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
+						if dist < 20 then
+							if firetouchinterest then
+								firetouchinterest(handle, targetHrp, 0)
+								firetouchinterest(handle, targetHrp, 1)
+							end
+							if knife:FindFirstChild("Stab") then
+								knife.Stab:FireServer("Slash")
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	if HoldHostageActive and findMurderer() == LocalPlayer then
+		if char and char:FindFirstChild("PrimaryPart") then
 			for _, p in ipairs(Players:GetPlayers()) do
 				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-					local targetHrp = p.Character.HumanoidRootPart
-					local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
-					if dist < 20 then
-						if firetouchinterest then
-							firetouchinterest(handle, targetHrp, 0)
-							firetouchinterest(handle, targetHrp, 1)
+					local hrp = p.Character.HumanoidRootPart
+					hrp.Anchored = true
+					hrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
+				end
+			end
+		end
+	end
+	
+	if AutoShootSheriff and findSheriff() == LocalPlayer and tick() - lastAutoShoot > 0.5 then
+		local murd = findMurderer()
+		if murd and murd.Character and murd.Character:FindFirstChild("HumanoidRootPart") then
+			local gun = char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
+			if gun then
+				local murdHRP = murd.Character.HumanoidRootPart
+				local myHRP = char:FindFirstChild("HumanoidRootPart")
+				if myHRP then
+					local raycastParams = RaycastParams.new()
+					raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+					raycastParams.FilterDescendantsInstances = {char}
+					
+					local direction = (murdHRP.Position - myHRP.Position)
+					local result = workspace:Raycast(myHRP.Position, direction.Unit * 1000, raycastParams)
+					
+					if result and result.Instance:IsDescendantOf(murd.Character) then
+						char.Humanoid:EquipTool(gun)
+						
+						local originPos = myHRP.Position
+						local targetPos = murdHRP.Position + (murdHRP.AssemblyLinearVelocity * (ShootOffset / 15))
+						
+						if InstakillSheriff then
+							originPos = murdHRP.Position + Vector3.new(0, 3, 0)
+							targetPos = murdHRP.Position
 						end
-						if knife:FindFirstChild("Stab") then
-							knife.Stab:FireServer("Slash")
+						
+						if gun:FindFirstChild("Shoot") then
+							gun.Shoot:FireServer(CFrame.new(originPos, targetPos), CFrame.new(targetPos))
 						end
+						local knifeLocal = gun:FindFirstChild("KnifeLocal")
+						if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
+							knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, targetPos, "AH2")
+						end
+						lastAutoShoot = tick()
+					end
+				end
+			end
+		end
+	end
+	
+	if NoclipActive then
+		for _, p in pairs(char:GetDescendants()) do
+			if p:IsA("BasePart") and p.CanCollide then
+				p.CanCollide = false
+			end
+		end
+	end
+	
+	if AntiFlingActive then
+		-- Disable collisions of other players to stop them touching you completely
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character then
+				for _, part in ipairs(p.Character:GetDescendants()) do
+					if part:IsA("BasePart") and part.CanCollide then
+						part.CanCollide = false
 					end
 				end
 			end
 		end
 		
-		if NoclipActive and LocalPlayer.Character then
-			for _, p in pairs(LocalPlayer.Character:GetDescendants()) do
-				if p:IsA("BasePart") and p.CanCollide then
-					p.CanCollide = false
-				end
-			end
-		end
-		
-		if AntiFlingActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and p.Character then
-					for _, part in ipairs(p.Character:GetDescendants()) do
-						if part:IsA("BasePart") and part.CanCollide then
-							part.CanCollide = false
-						end
-					end
-				end
-			end
-			
-			local hrp = LocalPlayer.Character.HumanoidRootPart
+		if char:FindFirstChild("HumanoidRootPart") then
+			local hrp = char.HumanoidRootPart
 			if hrp.AssemblyLinearVelocity.Magnitude > 50 or hrp.AssemblyAngularVelocity.Magnitude > 50 then
 				hrp.AssemblyLinearVelocity = Vector3.zero
 				hrp.AssemblyAngularVelocity = Vector3.zero
 			end
 		end
-	end)
-end)
+	end
+end))
 
 --------------------------------------------------------------------------------
 -- GUI PAGES & TABS
@@ -851,7 +944,6 @@ local FlingPage = createTab("Fling", false)
 local MiscPage = createTab("Misc", false)
 
 -- COMBAT
-local ShootOffset = 2.8
 createSlider(CombatPage, "Shoot Predict Offset", 0, 10, 3, function(value)
 	ShootOffset = value
 end)
@@ -860,7 +952,6 @@ createButton(CombatPage, "Shoot Murderer", function()
 	if findSheriff() ~= LocalPlayer then sendNotification("Error", "You are not the Sheriff!", 3) return end
 	local murd = findMurderer()
 	if not murd or not murd.Character or not murd.Character:FindFirstChild("HumanoidRootPart") then sendNotification("Error", "No murderer found!", 3) return end
-	
 	local gun = LocalPlayer.Character:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
 	if not gun then return end
 	LocalPlayer.Character.Humanoid:EquipTool(gun)
@@ -870,11 +961,11 @@ createButton(CombatPage, "Shoot Murderer", function()
 	local originPos, targetPos
 
 	if InstakillSheriff then
-		originPos = targetHRP.Position + Vector3.new(0, 2, 0)
+		originPos = targetHRP.Position + Vector3.new(0, 3, 0)
 		targetPos = targetHRP.Position
 	else
-		local predictedPosition = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * Vector3.new(0.75, 0.5, 0.75)) * (ShootOffset / 15)
-		originPos = LocalPlayer.Character.PrimaryPart.Position
+		local predictedPosition = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * (ShootOffset / 15))
+		originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
 		targetPos = predictedPosition
 	end
 	
@@ -898,6 +989,11 @@ createToggle(CombatPage, "Instakill Sheriff Shoot", false, function(state)
 	sendNotification("Combat", "Instakill Shoot " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
+createToggle(CombatPage, "Auto Shoot Murderer (Wall Check)", false, function(state)
+	AutoShootSheriff = state
+	sendNotification("Combat", "Auto Shoot " .. (state and "Enabled" or "Disabled"), 3)
+end)
+
 createButton(CombatPage, "Knife Throw to Closest", function()
 	throwKnifeAtClosest()
 	sendNotification("Combat", "Attempted knife throw.", 3)
@@ -917,26 +1013,40 @@ createButton(CombatPage, "Kill All (Murderer)", function()
 	
 	char.Humanoid:EquipTool(knife)
 	task.wait(0.1)
-	local handle = knife:FindFirstChild("Handle")
 
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-			local targetHrp = p.Character.HumanoidRootPart
-			targetHrp.Anchored = true
-			targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
-			if firetouchinterest and handle then
-				firetouchinterest(handle, targetHrp, 0)
-				firetouchinterest(handle, targetHrp, 1)
+	task.spawn(function()
+		local allDead = false
+		while not allDead and getgenv().PiyapRunning do
+			allDead = true
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+					local hum = p.Character:FindFirstChildOfClass("Humanoid")
+					if hum and hum.Health > 0 then
+						allDead = false
+						local targetHrp = p.Character.HumanoidRootPart
+						targetHrp.Anchored = true
+						targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
+						local handle = knife:FindFirstChild("Handle")
+						if firetouchinterest and handle then
+							firetouchinterest(handle, targetHrp, 0)
+							firetouchinterest(handle, targetHrp, 1)
+						end
+					end
+				end
+			end
+			if knife:FindFirstChild("Stab") then
+				knife.Stab:FireServer("Slash")
+			end
+			task.wait(0.1)
+		end
+		
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+				p.Character.HumanoidRootPart.Anchored = false
 			end
 		end
-	end
-	
-	task.wait(0.1)
-	
-	if knife:FindFirstChild("Stab") then
-		knife.Stab:FireServer("Slash")
-	end
-	sendNotification("Combat", "Brought all players to you and slashed!", 3)
+		sendNotification("Combat", "Kill All complete!", 3)
+	end)
 end)
 
 createToggle(CombatPage, "Kill Aura (Murderer)", false, function(state)
@@ -944,15 +1054,20 @@ createToggle(CombatPage, "Kill Aura (Murderer)", false, function(state)
 	sendNotification("Combat", "Kill Aura " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createButton(CombatPage, "Hold Everyone Hostage (Murderer)", function()
-	if findMurderer() ~= LocalPlayer then sendNotification("Error", "You must be Murderer!", 3) return end
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-			p.Character.HumanoidRootPart.Anchored = true
-			p.Character.HumanoidRootPart.CFrame = LocalPlayer.Character.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
+createToggle(CombatPage, "Hold Everyone Hostage (Murderer)", false, function(state)
+	if findMurderer() ~= LocalPlayer and state then 
+		sendNotification("Error", "You must be Murderer!", 3) 
+		return 
+	end
+	HoldHostageActive = state
+	if not state then
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+				p.Character.HumanoidRootPart.Anchored = false
+			end
 		end
 	end
-	sendNotification("Combat", "All players brought to you and frozen.", 3)
+	sendNotification("Combat", "Hold Hostage " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
 createSlider(CombatPage, "Hitbox Expander", 1, 20, 1, function(value)
@@ -1001,7 +1116,7 @@ createToggle(VisualsPage, "Round Timer", false, function(state)
 		TimerLabel.TextSize = 18
 		
 		task.spawn(function()
-			while state and TimerLabel and TimerLabel.Parent do
+			while state and TimerLabel and TimerLabel.Parent and getgenv().PiyapRunning do
 				local timerPart = workspace:FindFirstChild("RoundTimerPart")
 				if timerPart then
 					local secs = timerPart:GetAttribute("Time")
@@ -1063,11 +1178,11 @@ end)
 local InfJumpConnection
 createToggle(MovementPage, "Infinite Jump", false, function(state)
 	if state then
-		InfJumpConnection = UserInputService.JumpRequest:Connect(function()
+		InfJumpConnection = addConn(UserInputService.JumpRequest:Connect(function()
 			if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
 				LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 			end
-		end)
+		end))
 	else
 		if InfJumpConnection then InfJumpConnection:Disconnect() end
 	end
@@ -1088,14 +1203,14 @@ end)
 local CtrlClickConnection
 createToggle(TeleportsPage, "Ctrl + Click Teleport", false, function(state)
 	if state then
-		CtrlClickConnection = UserInputService.InputBegan:Connect(function(input, gpe)
+		CtrlClickConnection = addConn(UserInputService.InputBegan:Connect(function(input, gpe)
 			if not gpe and input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
 				local mouse = LocalPlayer:GetMouse()
 				if mouse.Hit and LocalPlayer.Character then
 					LocalPlayer.Character:PivotTo(mouse.Hit + Vector3.new(0, 3, 0))
 				end
 			end
-		end)
+		end))
 	else
 		if CtrlClickConnection then CtrlClickConnection:Disconnect() end
 	end
@@ -1133,9 +1248,7 @@ end)
 createButton(FlingPage, "Fling Murderer", function()
 	local m = findMurderer()
 	if m then
-		task.spawn(function()
-			SkidFling(m, false)
-		end)
+		task.spawn(function() SkidFling(m, false) end)
 	else
 		sendNotification("Error", "No Murderer found.", 3)
 	end
@@ -1144,9 +1257,7 @@ end)
 createButton(FlingPage, "Fling Sheriff", function()
 	local s = findSheriff()
 	if s then
-		task.spawn(function()
-			SkidFling(s, false)
-		end)
+		task.spawn(function() SkidFling(s, false) end)
 	else
 		sendNotification("Error", "No Sheriff found.", 3)
 	end
@@ -1162,9 +1273,7 @@ createTextBox(FlingPage, "Target Fling Username", "Enter name...", function(text
 	end
 	
 	if targetPlayer then
-		task.spawn(function()
-			SkidFling(targetPlayer, false)
-		end)
+		task.spawn(function() SkidFling(targetPlayer, false) end)
 	else
 		sendNotification("Error", "Player not found.", 3)
 	end
@@ -1194,7 +1303,7 @@ local function StartMultiFling()
 	sendNotification("Fling", "Flinging " .. count .. " target(s)", 3)
 	
 	task.spawn(function()
-		while getgenv().FlingActive do
+		while getgenv().FlingActive and getgenv().PiyapRunning do
 			local validTargets = {}
 			for name, player in pairs(SelectedTargets) do
 				if player and player.Parent then
@@ -1270,11 +1379,11 @@ end
 createButton(FlingPage, "Select All", function() ToggleAllPlayers(true) end)
 createButton(FlingPage, "Deselect All", function() ToggleAllPlayers(false) end)
 
-Players.PlayerAdded:Connect(function() task.wait(1) RefreshPlayerList() end)
-Players.PlayerRemoving:Connect(function(player)
+addConn(Players.PlayerAdded:Connect(function() task.wait(1) RefreshPlayerList() end))
+addConn(Players.PlayerRemoving:Connect(function(player)
 	SelectedTargets[player.Name] = nil
 	RefreshPlayerList()
-end)
+end))
 
 RefreshPlayerList()
 
@@ -1366,10 +1475,10 @@ createButton(MiscPage, "Anti-AFK", function()
 		end
 		sendNotification("Misc", "Anti-AFK Enabled", 3)
 	else
-		LocalPlayer.Idled:Connect(function()
+		addConn(LocalPlayer.Idled:Connect(function()
 			game:GetService("VirtualUser"):CaptureController()
 			game:GetService("VirtualUser"):ClickButton2(Vector2.new())
-		end)
+		end))
 		sendNotification("Misc", "VirtualUser Anti-AFK Enabled", 3)
 	end
 end)
