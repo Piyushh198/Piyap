@@ -1,4 +1,13 @@
 local CoreGui = game:GetService("CoreGui")
+
+-- Destroy old GUI to prevent overlaps when re-executing
+if CoreGui:FindFirstChild("Piyap") then
+	CoreGui.Piyap:Destroy()
+end
+if CoreGui:FindFirstChild("PiyapNotifs") then
+	CoreGui.PiyapNotifs:Destroy()
+end
+
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -23,13 +32,6 @@ getgenv().PiyapConnections = {}
 local function addConn(connection)
 	table.insert(getgenv().PiyapConnections, connection)
 	return connection
-end
-
-if CoreGui:FindFirstChild("Piyap") then
-	CoreGui.Piyap:Destroy()
-end
-if CoreGui:FindFirstChild("PiyapNotifs") then
-	CoreGui.PiyapNotifs:Destroy()
 end
 
 -- GUI SETUP
@@ -724,7 +726,6 @@ local AutoGetGun = false
 local KillAuraActive = false
 local AutoThrowActive = false
 local NoclipActive = false
-local InstakillSheriff = false
 local AntiFlingActive = false
 local AutoShootSheriff = false
 local HoldHostageActive = false
@@ -802,10 +803,14 @@ local function throwKnifeAtClosest()
 	
 	local target = findNearestPlayer()
 	if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-		knife:WaitForChild("Throw"):FireServer(
-			CFrame.new(LocalPlayer.Character.PrimaryPart.Position),
-			CFrame.new(target.Character.HumanoidRootPart.Position)
-		)
+		local originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
+		local targetPos = target.Character.HumanoidRootPart.Position
+		
+		if knife:FindFirstChild("Events") and knife.Events:FindFirstChild("KnifeThrown") then
+			knife.Events.KnifeThrown:FireServer(CFrame.new(originPos), CFrame.new(targetPos))
+		elseif knife:FindFirstChild("Throw") then
+			knife.Throw:FireServer(CFrame.new(originPos), CFrame.new(targetPos))
+		end
 	end
 end
 
@@ -883,11 +888,6 @@ addConn(RunService.Heartbeat:Connect(function()
 						local originPos = myHRP.Position
 						local targetPos = murdHRP.Position + (murdHRP.AssemblyLinearVelocity * (ShootOffset / 15))
 						
-						if InstakillSheriff then
-							originPos = murdHRP.Position + Vector3.new(0, 3, 0)
-							targetPos = murdHRP.Position
-						end
-						
 						if gun:FindFirstChild("Shoot") then
 							gun.Shoot:FireServer(CFrame.new(originPos, targetPos), CFrame.new(targetPos))
 						end
@@ -958,19 +958,11 @@ createButton(CombatPage, "Shoot Murderer", function()
 	task.wait(0.05)
 	
 	local targetHRP = murd.Character.HumanoidRootPart
-	local originPos, targetPos
-
-	if InstakillSheriff then
-		originPos = targetHRP.Position + Vector3.new(0, 3, 0)
-		targetPos = targetHRP.Position
-	else
-		local predictedPosition = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * (ShootOffset / 15))
-		originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
-		targetPos = predictedPosition
-	end
+	local predictedPosition = targetHRP.Position + (targetHRP.AssemblyLinearVelocity * (ShootOffset / 15))
+	local originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
 	
-	local originCF = CFrame.new(originPos, targetPos)
-	local targetCF = CFrame.new(targetPos)
+	local originCF = CFrame.new(originPos, predictedPosition)
+	local targetCF = CFrame.new(predictedPosition)
 	
 	if gun:FindFirstChild("Shoot") then
 		gun.Shoot:FireServer(originCF, targetCF)
@@ -978,15 +970,10 @@ createButton(CombatPage, "Shoot Murderer", function()
 	
 	local knifeLocal = gun:FindFirstChild("KnifeLocal")
 	if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
-		knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, targetPos, "AH2")
+		knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, predictedPosition, "AH2")
 	end
 	
 	sendNotification("Combat", "Shot at the Murderer!", 3)
-end)
-
-createToggle(CombatPage, "Instakill Sheriff Shoot", false, function(state)
-	InstakillSheriff = state
-	sendNotification("Combat", "Instakill Shoot " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
 createToggle(CombatPage, "Auto Shoot Murderer (Wall Check)", false, function(state)
@@ -1012,34 +999,36 @@ createButton(CombatPage, "Kill All (Murderer)", function()
 	if not knife then sendNotification("Error", "Knife not found!", 3) return end
 	
 	char.Humanoid:EquipTool(knife)
-	task.wait(0.1)
+	task.wait(0.2)
 
 	task.spawn(function()
-		local allDead = false
-		while not allDead and getgenv().PiyapRunning do
-			allDead = true
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-					local hum = p.Character:FindFirstChildOfClass("Humanoid")
-					if hum and hum.Health > 0 then
-						allDead = false
-						local targetHrp = p.Character.HumanoidRootPart
-						targetHrp.Anchored = true
-						targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
-						local handle = knife:FindFirstChild("Handle")
-						if firetouchinterest and handle then
-							firetouchinterest(handle, targetHrp, 0)
-							firetouchinterest(handle, targetHrp, 1)
-						end
+		local handle = knife:FindFirstChild("Handle")
+		
+		for _, p in ipairs(Players:GetPlayers()) do
+			if not getgenv().PiyapRunning then break end
+			if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+				local hum = p.Character:FindFirstChildOfClass("Humanoid")
+				if hum and hum.Health > 0 then
+					local targetHrp = p.Character.HumanoidRootPart
+					targetHrp.Anchored = true
+					targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -2)
+					
+					task.wait(0.05) -- Crucial for avoiding crashes
+					
+					if firetouchinterest and handle then
+						firetouchinterest(handle, targetHrp, 0)
+						firetouchinterest(handle, targetHrp, 1)
 					end
 				end
 			end
-			if knife:FindFirstChild("Stab") then
-				knife.Stab:FireServer("Slash")
-			end
-			task.wait(0.1)
 		end
 		
+		task.wait(0.1)
+		if knife:FindFirstChild("Stab") then
+			knife.Stab:FireServer("Slash")
+		end
+		
+		task.wait(0.5)
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
 				p.Character.HumanoidRootPart.Anchored = false
