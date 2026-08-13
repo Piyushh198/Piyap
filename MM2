@@ -1,11 +1,10 @@
 local CoreGui = game:GetService("CoreGui")
 
--- Destroy old GUI to prevent overlaps when re-executing
-if CoreGui:FindFirstChild("Piyap") then
-	CoreGui.Piyap:Destroy()
-end
-if CoreGui:FindFirstChild("PiyapNotifs") then
-	CoreGui.PiyapNotifs:Destroy()
+-- PERFECT CLEANUP: Destroy old GUIs to prevent overlaps when re-executing
+for _, gui in pairs(CoreGui:GetChildren()) do
+	if gui.Name == "Piyap" or gui.Name == "PiyapNotifs" then
+		gui:Destroy()
+	end
 end
 
 local TweenService = game:GetService("TweenService")
@@ -15,7 +14,7 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 local LocalPlayer = Players.LocalPlayer
 
--- CLEANUP PREVIOUS EXECUTIONS
+-- KILL OLD LOOPS & CONNECTIONS
 if getgenv().PiyapRunning ~= nil then
 	getgenv().PiyapRunning = false
 	task.wait(0.1) -- Allow old loops to break
@@ -705,10 +704,26 @@ local function findSheriff()
 	return nil
 end
 
+local function findNearestPlayer()
+	local nearest = nil
+	local shortestDist = math.huge
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local dist = (LocalPlayer.Character.PrimaryPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
+			if dist < shortestDist then
+				shortestDist = dist
+				nearest = p
+			end
+		end
+	end
+	return nearest
+end
+
 local ESPData = {Players = false, Gun = false, Traps = false, HideSelf = false}
 local Highlights = {}
 local AutoGetGun = false
 local KillAuraActive = false
+local KillAuraRange = 20
 local AutoThrowActive = false
 local NoclipActive = false
 local AntiFlingActive = false
@@ -800,7 +815,7 @@ local function throwKnifeAtClosest()
 				-- Raycast Wall Check
 				local raycastParams = RaycastParams.new()
 				raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-				raycastParams.FilterDescendantsInstances = {char, p.Character}
+				raycastParams.FilterDescendantsInstances = {char, p.Character, workspace.CurrentCamera}
 				
 				local direction = (targetHRP.Position - originPos)
 				local hit = workspace:Raycast(originPos, direction.Unit * direction.Magnitude, raycastParams)
@@ -815,14 +830,14 @@ local function throwKnifeAtClosest()
 	
 	if nearest then
 		char.Humanoid:EquipTool(knife)
-		local handPos = char:FindFirstChild("RightHand") and char.RightHand.Position or originPos
 		local targetPos = nearest.Character.HumanoidRootPart.Position
-		
-		if knife:FindFirstChild("Events") and knife.Events:FindFirstChild("KnifeThrown") then
-			knife.Events.KnifeThrown:FireServer(CFrame.new(handPos), CFrame.new(targetPos))
-		elseif knife:FindFirstChild("Throw") then
-			knife.Throw:FireServer(CFrame.new(handPos), CFrame.new(targetPos))
-		end
+		local originCF = CFrame.lookAt(originPos, targetPos)
+        
+        if knife:FindFirstChild("Throw") then
+            knife.Throw:FireServer(originCF, targetPos)
+        elseif knife:FindFirstChild("Events") and knife.Events:FindFirstChild("KnifeThrown") then
+            knife.Events.KnifeThrown:FireServer(originCF, targetPos)
+        end
 	end
 end
 
@@ -833,9 +848,9 @@ task.spawn(function()
 	end
 end)
 
--- Safe Kill Aura loop (using hostage logic without firetouchinterest)
+-- Safe Kill Aura loop (using precise hostage logic without touchinterests crashing)
 task.spawn(function()
-	while task.wait(0.5) do
+	while task.wait(0.3) do
 		if not getgenv().PiyapRunning then break end
 		if KillAuraActive and findMurderer() == LocalPlayer then
 			local char = LocalPlayer.Character
@@ -848,12 +863,12 @@ task.spawn(function()
 					if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
 						local targetHrp = p.Character.HumanoidRootPart
 						local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
-						if dist < 20 then
+						if dist <= KillAuraRange then
 							targetHrp.Anchored = true
 							targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
 							slashed = true
-							-- Free them shortly after
-							task.delay(0.4, function()
+							
+							task.delay(0.3, function()
 								if targetHrp then targetHrp.Anchored = false end
 							end)
 						end
@@ -870,7 +885,34 @@ end)
 local ShootOffset = 2.8
 local lastAutoShoot = 0
 
+addConn(RunService.Stepped:Connect(function()
+    if not getgenv().PiyapRunning then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+
+    -- New Anti-Fling: Removes collisions from your own body locally
+    if AntiFlingActive then
+        for _, partName in ipairs({"Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Head"}) do
+            local part = char:FindFirstChild(partName)
+            if part and part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+		
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer and p.Character then
+				for _, part in ipairs(p.Character:GetDescendants()) do
+					if part:IsA("BasePart") and part.CanCollide then
+						part.CanCollide = false
+					end
+				end
+			end
+		end
+    end
+end))
+
 addConn(RunService.Heartbeat:Connect(function()
+	if not getgenv().PiyapRunning then return end
 	local char = LocalPlayer.Character
 	if not char then return end
 
@@ -898,7 +940,7 @@ addConn(RunService.Heartbeat:Connect(function()
 				if myHRP then
 					local raycastParams = RaycastParams.new()
 					raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-					raycastParams.FilterDescendantsInstances = {char, murd.Character}
+					raycastParams.FilterDescendantsInstances = {char, murd.Character, workspace.CurrentCamera}
 					
 					local direction = (murdHRP.Position - myHRP.Position)
 					local result = workspace:Raycast(myHRP.Position, direction.Unit * direction.Magnitude, raycastParams)
@@ -909,8 +951,11 @@ addConn(RunService.Heartbeat:Connect(function()
 						local originPos = myHRP.Position
 						local targetPos = murdHRP.Position + (murdHRP.AssemblyLinearVelocity * (ShootOffset / 15))
 						
+						local originCF = CFrame.lookAt(originPos, targetPos)
+						local targetCF = CFrame.new(targetPos)
+						
 						if gun:FindFirstChild("Shoot") then
-							gun.Shoot:FireServer(CFrame.new(originPos, targetPos), CFrame.new(targetPos))
+							gun.Shoot:FireServer(originCF, targetCF)
 						end
 						local knifeLocal = gun:FindFirstChild("KnifeLocal")
 						if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
@@ -927,16 +972,6 @@ addConn(RunService.Heartbeat:Connect(function()
 		for _, p in pairs(char:GetDescendants()) do
 			if p:IsA("BasePart") and p.CanCollide then
 				p.CanCollide = false
-			end
-		end
-	end
-	
-	-- New Anti-Fling: Remove collisions of local player's primary parts
-	if AntiFlingActive then
-		for _, partName in ipairs({"HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso", "Head"}) do
-			local part = char:FindFirstChild(partName)
-			if part and part:IsA("BasePart") then
-				part.CanCollide = false
 			end
 		end
 	end
@@ -958,7 +993,7 @@ createSlider(CombatPage, "Shoot Predict Offset", 0, 10, 3, function(value)
 	ShootOffset = value
 end)
 
-createButton(CombatPage, "Shoot Murderer (Insta)", function()
+createButton(CombatPage, "Shoot Murderer", function()
 	if findSheriff() ~= LocalPlayer then sendNotification("Error", "You are not the Sheriff!", 3) return end
 	local murd = findMurderer()
 	if not murd or not murd.Character or not murd.Character:FindFirstChild("HumanoidRootPart") then sendNotification("Error", "No murderer found!", 3) return end
@@ -972,7 +1007,7 @@ createButton(CombatPage, "Shoot Murderer (Insta)", function()
 	local targetPos = targetHRP.Position
 	local originPos = targetPos + Vector3.new(0, 3, 0) -- Fire directly above them downward
 	
-	local originCF = CFrame.new(originPos, targetPos)
+	local originCF = CFrame.lookAt(originPos, targetPos)
 	local targetCF = CFrame.new(targetPos)
 	
 	if gun:FindFirstChild("Shoot") then
@@ -984,25 +1019,25 @@ createButton(CombatPage, "Shoot Murderer (Insta)", function()
 		knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, targetPos, "AH2")
 	end
 	
-	sendNotification("Combat", "Insta-Shot at the Murderer!", 3)
+	sendNotification("Combat", "Shot at the Murderer!", 3)
 end)
 
-createToggle(CombatPage, "Auto Shoot Murderer (Wall Check)", false, function(state)
+createToggle(CombatPage, "Auto Shoot Murderer", false, function(state)
 	AutoShootSheriff = state
 	sendNotification("Combat", "Auto Shoot " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createButton(CombatPage, "Knife Throw to Closest (Wall Check)", function()
+createButton(CombatPage, "Knife Throw to Closest", function()
 	throwKnifeAtClosest()
 	sendNotification("Combat", "Attempted knife throw.", 3)
 end)
 
-createToggle(CombatPage, "Auto Knife Throw (Wall Check)", false, function(state)
+createToggle(CombatPage, "Auto Knife Throw", false, function(state)
 	AutoThrowActive = state
 	sendNotification("Combat", "Auto Throw " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createButton(CombatPage, "Kill All (Murderer)", function()
+createButton(CombatPage, "Kill All", function()
 	if findMurderer() ~= LocalPlayer then sendNotification("Error", "You are not the Murderer!", 3) return end
 	local char = LocalPlayer.Character
 	if not char or not char:FindFirstChild("PrimaryPart") then return end
@@ -1044,12 +1079,16 @@ createButton(CombatPage, "Kill All (Murderer)", function()
 	end)
 end)
 
-createToggle(CombatPage, "Kill Aura (Murderer)", false, function(state)
+createToggle(CombatPage, "Kill Aura", false, function(state)
 	KillAuraActive = state
 	sendNotification("Combat", "Kill Aura " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createToggle(CombatPage, "Hold Everyone Hostage (Murderer)", false, function(state)
+createSlider(CombatPage, "Kill Aura Range", 1, 100, 20, function(value)
+	KillAuraRange = value
+end)
+
+createToggle(CombatPage, "Hold Everyone Hostage", false, function(state)
 	if findMurderer() ~= LocalPlayer and state then 
 		sendNotification("Error", "You must be Murderer!", 3) 
 		return 
