@@ -882,7 +882,7 @@ addConn(workspace.DescendantAdded:Connect(function(ch)
 	end
 end))
 
--- AUTO KNIFE THROW: BLASTS ALL ARGS TO FORCE THROW
+-- AUTO KNIFE THROW EXACT LOGIC
 local function autoKnifeThrow()
 	if findMurderer() ~= LocalPlayer then return end
 	local char = LocalPlayer.Character
@@ -898,21 +898,20 @@ local function autoKnifeThrow()
 	
 	if knife.Parent ~= char then
 		char.Humanoid:EquipTool(knife)
-		task.wait(0.05)
+		task.wait(0.1) -- Required to let the tool equip fully on the server
 	end
 	
 	local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
 	local predictedPos = getPredictedPosition(NearestPlayer, ShootOffset + 1)
 	
-	-- Multi-blast technique ensures it catches the exact parameter format the game wants
-	pcall(function() knife.Throw:FireServer(CFrame.new(predictedPos)) end)
-	pcall(function() knife.Throw:FireServer(predictedPos) end)
-	pcall(function() knife.Throw:FireServer(CFrame.lookAt(originPos, predictedPos), CFrame.new(predictedPos)) end)
+	local throwCFrame1 = CFrame.new(originPos)
+	local throwCFrame2 = CFrame.new(predictedPos)
 	
 	local events = knife:FindFirstChild("Events")
 	if events and events:FindFirstChild("KnifeThrown") then
-		pcall(function() events.KnifeThrown:FireServer(CFrame.lookAt(originPos, predictedPos), CFrame.new(predictedPos)) end)
-		pcall(function() events.KnifeThrown:FireServer(CFrame.new(originPos), CFrame.new(predictedPos)) end)
+		events.KnifeThrown:FireServer(throwCFrame1, throwCFrame2)
+	elseif knife:FindFirstChild("Throw") then
+		knife.Throw:FireServer(throwCFrame1, throwCFrame2)
 	end
 end
 
@@ -923,7 +922,7 @@ task.spawn(function()
 	end
 end)
 
--- KILL AURA & HOLD HOSTAGE (LOCAL CFrame ANCHORING)
+-- KILL AURA & KILL ALL (WAS HOLD HOSTAGE)
 task.spawn(function()
 	while task.wait(0.2) do
 		if not getgenv().PiyapRunning then break end
@@ -947,7 +946,7 @@ task.spawn(function()
 							
 							local shouldGrab = false
 							
-							if HoldHostageActive then
+							if HoldHostageActive then -- This is now the "Kill All" logic
 								shouldGrab = true
 							elseif KillAuraActive and dist <= KillAuraRange then
 								shouldGrab = true
@@ -994,7 +993,7 @@ addConn(RunService.Stepped:Connect(function()
 	local char = LocalPlayer.Character
 	if not char then return end
 
-	-- NO-CLIP FIX: Only removes collisions from OTHER players locally.
+	-- NO-CLIP FIX: Only removes collisions from OTHER players locally. Does not touch your collision.
 	if AntiFlingActive then
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and p.Character then
@@ -1087,20 +1086,29 @@ createSlider(CombatPage, "Shoot Predict Offset", 0, 10, 3, function(value)
 end)
 
 createButton(CombatPage, "Shoot Murderer", function()
-	if findSheriff() ~= LocalPlayer then sendNotification("Error", "You're not sheriff/hero.", 3) return end
+	if findSheriff() ~= LocalPlayer then 
+		sendNotification("Error", "You're not sheriff/hero.", 3) 
+		return 
+	end
 	
 	local murderer = findMurderer() or findSheriffThatsNotMe()
-	if not murderer then sendNotification("Error", "No murderer (or sheriff) to shoot.", 3) return end
+	if not murderer then
+		sendNotification("Error", "No murderer (or sheriff) to shoot.", 3)
+		return
+	end
 	
 	local gun = LocalPlayer.Character:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
-	if not gun then sendNotification("Error", "You don't have the gun..?", 3) return end
-	
+	if not gun then 
+		sendNotification("Error", "You don't have the gun..?", 3)
+		return 
+	end
 	LocalPlayer.Character.Humanoid:EquipTool(gun)
 	task.wait(0.05)
 	
 	local originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
 	local predictedPos = getPredictedPosition(murderer, ShootOffset)
 	
+	-- Exact YARHM Arguments
 	local args = {
 		CFrame.new(originPos),
 		CFrame.new(predictedPos)
@@ -1130,52 +1138,7 @@ createToggle(CombatPage, "Auto Knife Throw", false, function(state)
 	sendNotification("Combat", "Auto Throw " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createButton(CombatPage, "Kill All", function()
-	if findMurderer() ~= LocalPlayer then sendNotification("Error", "You are not the Murderer!", 3) return end
-	local char = LocalPlayer.Character
-	local hrp = char and char:FindFirstChild("HumanoidRootPart")
-	local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-	
-	if not hrp or not knife then sendNotification("Error", "Missing Knife or RootPart", 3) return end
-	char.Humanoid:EquipTool(knife)
-	task.wait(0.1)
-
-	task.spawn(function()
-		local originalPos = hrp.CFrame
-		sendNotification("Combat", "Starting Kill All...", 3)
-		
-		for _, targetPlayer in ipairs(Players:GetPlayers()) do
-			if not getgenv().PiyapRunning then break end
-			if targetPlayer ~= LocalPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-				local targetHrp = targetPlayer.Character.HumanoidRootPart
-				local hum = targetPlayer.Character:FindFirstChild("Humanoid")
-				
-				if hum and hum.Health > 0 then
-					-- TELEPORT METHOD: You teleport to them to guarantee the server registers the kill
-					hrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 1.5)
-					task.wait(0.15) 
-					
-					pcall(function() knife.Stab:FireServer("Slash") end)
-					task.wait(0.1)
-				end
-			end
-		end
-		
-		hrp.CFrame = originalPos
-		sendNotification("Combat", "Kill All complete!", 3)
-	end)
-end)
-
-createToggle(CombatPage, "Kill Aura", false, function(state)
-	KillAuraActive = state
-	sendNotification("Combat", "Kill Aura " .. (state and "Enabled" or "Disabled"), 3)
-end)
-
-createSlider(CombatPage, "Kill Aura Range", 1, 100, 20, function(value)
-	KillAuraRange = value
-end)
-
-createToggle(CombatPage, "Hold Everyone Hostage", false, function(state)
+createToggle(CombatPage, "Kill All", false, function(state)
 	if findMurderer() ~= LocalPlayer and state then 
 		sendNotification("Error", "You must be Murderer!", 3) 
 		return 
@@ -1188,7 +1151,16 @@ createToggle(CombatPage, "Hold Everyone Hostage", false, function(state)
 			end
 		end
 	end
-	sendNotification("Combat", "Hold Hostage " .. (state and "Enabled" or "Disabled"), 3)
+	sendNotification("Combat", "Kill All " .. (state and "Enabled" or "Disabled"), 3)
+end)
+
+createToggle(CombatPage, "Kill Aura", false, function(state)
+	KillAuraActive = state
+	sendNotification("Combat", "Kill Aura " .. (state and "Enabled" or "Disabled"), 3)
+end)
+
+createSlider(CombatPage, "Kill Aura Range", 1, 100, 20, function(value)
+	KillAuraRange = value
 end)
 
 createSlider(CombatPage, "Hitbox Expander", 1, 20, 1, function(value)
