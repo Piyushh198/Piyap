@@ -31,6 +31,27 @@ local function addConn(connection)
 	return connection
 end
 
+-- CUSTOM LINE OF SIGHT SCANNER
+local function checkLineOfSight(originPos, targetPos, ignoreList)
+	local direction = targetPos - originPos
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+	raycastParams.FilterDescendantsInstances = ignoreList
+	
+	local hit = workspace:Raycast(originPos, direction, raycastParams)
+	if hit then
+		-- Ignore transparent parts, non-collidable parts, and glass
+		if hit.Instance.Transparency >= 0.5 or not hit.Instance.CanCollide or hit.Instance.Name == "Glass" then
+			table.insert(ignoreList, hit.Instance)
+			return checkLineOfSight(originPos, targetPos, ignoreList)
+		end
+		-- It hit a solid opaque wall
+		return false
+	end
+	-- Hit nothing, meaning clear line of sight!
+	return true
+end
+
 -- GUI SETUP
 local Piyap = Instance.new("ScreenGui")
 Piyap.Name = "Piyap"
@@ -763,26 +784,6 @@ local function findSheriffThatsNotMe()
 	return nil
 end
 
-local function findNearestPlayer()
-	local nearestPlayer = nil
-	local shortestDistance = math.huge
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer and player.Character then 
-			local localRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			local otherRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-
-			if localRootPart and otherRootPart then
-				local distance = (localRootPart.Position - otherRootPart.Position).Magnitude
-				if distance < shortestDistance then
-					shortestDistance = distance
-					nearestPlayer = player
-				end
-			end
-		end
-	end
-	return nearestPlayer
-end
-
 local function getPredictedPosition(player, shootOffset)
 	local ogplayer = player
 	pcall(function()
@@ -882,7 +883,7 @@ addConn(workspace.DescendantAdded:Connect(function(ch)
 	end
 end))
 
--- AUTO KNIFE THROW EXACT LOGIC
+-- LINE OF SIGHT KNIFE THROWER (SCANS WHOLE MAP)
 local function autoKnifeThrow()
 	if findMurderer() ~= LocalPlayer then return end
 	local char = LocalPlayer.Character
@@ -890,28 +891,46 @@ local function autoKnifeThrow()
 	local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
 	if not knife then return end
 	
-	local NearestPlayer = findNearestPlayer()
-	if not NearestPlayer or not NearestPlayer.Character then return end
+	local sightOrigin = char:FindFirstChild("Head") and char.Head.Position or char.PrimaryPart.Position
 	
-	local nearestHRP = NearestPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if not nearestHRP then return end
+	local bestTarget = nil
+	local shortestDist = math.huge
 	
-	if knife.Parent ~= char then
-		char.Humanoid:EquipTool(knife)
-		task.wait(0.1) -- Required to let the tool equip fully on the server
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+			local hum = p.Character:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				local targetHRP = p.Character.HumanoidRootPart
+				local dist = (sightOrigin - targetHRP.Position).Magnitude
+				
+				if dist < shortestDist then
+					local ignoreList = {char, p.Character, workspace.CurrentCamera}
+					if checkLineOfSight(sightOrigin, targetHRP.Position, ignoreList) then
+						shortestDist = dist
+						bestTarget = p
+					end
+				end
+			end
+		end
 	end
 	
-	local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
-	local predictedPos = getPredictedPosition(NearestPlayer, ShootOffset + 1)
-	
-	local throwCFrame1 = CFrame.new(originPos)
-	local throwCFrame2 = CFrame.new(predictedPos)
-	
-	local events = knife:FindFirstChild("Events")
-	if events and events:FindFirstChild("KnifeThrown") then
-		events.KnifeThrown:FireServer(throwCFrame1, throwCFrame2)
-	elseif knife:FindFirstChild("Throw") then
-		knife.Throw:FireServer(throwCFrame1, throwCFrame2)
+	if bestTarget then
+		if knife.Parent ~= char then
+			char.Humanoid:EquipTool(knife)
+			task.wait(0.05)
+		end
+		
+		local throwOrigin = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
+		local predictedPos = getPredictedPosition(bestTarget, ShootOffset + 1)
+		
+		pcall(function()
+			local events = knife:FindFirstChild("Events")
+			if events and events:FindFirstChild("KnifeThrown") then
+				events.KnifeThrown:FireServer(CFrame.new(throwOrigin), CFrame.new(predictedPos))
+			elseif knife:FindFirstChild("Throw") then
+				knife.Throw:FireServer(CFrame.new(throwOrigin), CFrame.new(predictedPos))
+			end
+		end)
 	end
 end
 
@@ -922,7 +941,7 @@ task.spawn(function()
 	end
 end)
 
--- KILL AURA & KILL ALL (WAS HOLD HOSTAGE)
+-- KILL AURA & KILL ALL (PERFECT HOLD HOSTAGE EXACT MATH)
 task.spawn(function()
 	while task.wait(0.2) do
 		if not getgenv().PiyapRunning then break end
@@ -946,7 +965,7 @@ task.spawn(function()
 							
 							local shouldGrab = false
 							
-							if HoldHostageActive then -- This is now the "Kill All" logic
+							if HoldHostageActive then
 								shouldGrab = true
 							elseif KillAuraActive and dist <= KillAuraRange then
 								shouldGrab = true
