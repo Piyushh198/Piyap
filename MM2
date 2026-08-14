@@ -31,27 +31,6 @@ local function addConn(connection)
 	return connection
 end
 
--- CUSTOM LINE OF SIGHT SCANNER
-local function checkLineOfSight(originPos, targetPos, ignoreList)
-	local direction = targetPos - originPos
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-	raycastParams.FilterDescendantsInstances = ignoreList
-	
-	local hit = workspace:Raycast(originPos, direction, raycastParams)
-	if hit then
-		-- Ignore transparent parts, non-collidable parts, and glass
-		if hit.Instance.Transparency >= 0.5 or not hit.Instance.CanCollide or hit.Instance.Name == "Glass" then
-			table.insert(ignoreList, hit.Instance)
-			return checkLineOfSight(originPos, targetPos, ignoreList)
-		end
-		-- It hit a solid opaque wall
-		return false
-	end
-	-- Hit nothing, meaning clear line of sight!
-	return true
-end
-
 -- GUI SETUP
 local Piyap = Instance.new("ScreenGui")
 Piyap.Name = "Piyap"
@@ -883,29 +862,37 @@ addConn(workspace.DescendantAdded:Connect(function(ch)
 	end
 end))
 
--- LINE OF SIGHT KNIFE THROWER (SCANS WHOLE MAP)
+
+-- AUTO KNIFE THROW WITH AUTO-SHOOT'S NATIVE RAYCAST SCANNER
 local function autoKnifeThrow()
 	if findMurderer() ~= LocalPlayer then return end
 	local char = LocalPlayer.Character
-	if not char or not char:FindFirstChild("PrimaryPart") then return end
-	local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-	if not knife then return end
-	
-	local sightOrigin = char:FindFirstChild("Head") and char.Head.Position or char.PrimaryPart.Position
+	local myHRP = char and char:FindFirstChild("HumanoidRootPart")
+	local knife = char and (char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife"))
+	if not myHRP or not knife then return end
 	
 	local bestTarget = nil
 	local shortestDist = math.huge
 	
+	-- Scan all players to find the closest one in clear line of sight
 	for _, p in ipairs(Players:GetPlayers()) do
 		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
 			local hum = p.Character:FindFirstChildOfClass("Humanoid")
 			if hum and hum.Health > 0 then
 				local targetHRP = p.Character.HumanoidRootPart
-				local dist = (sightOrigin - targetHRP.Position).Magnitude
+				local dist = (myHRP.Position - targetHRP.Position).Magnitude
 				
 				if dist < shortestDist then
-					local ignoreList = {char, p.Character, workspace.CurrentCamera}
-					if checkLineOfSight(sightOrigin, targetHRP.Position, ignoreList) then
+					-- EXACT SAME RAYCAST LOGIC AS AUTO-SHOOT
+					local rayDirection = targetHRP.Position - myHRP.Position
+					local raycastParams = RaycastParams.new()
+					raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+					raycastParams.FilterDescendantsInstances = {char}
+					
+					local hit = workspace:Raycast(myHRP.Position, rayDirection, raycastParams)
+					
+					-- If the ray hits nothing, OR the thing it hit is part of the target's character
+					if not hit or hit.Instance:IsDescendantOf(p.Character) then
 						shortestDist = dist
 						bestTarget = p
 					end
@@ -914,21 +901,28 @@ local function autoKnifeThrow()
 		end
 	end
 	
+	-- If a clear target was found, throw the knife!
 	if bestTarget then
 		if knife.Parent ~= char then
 			char.Humanoid:EquipTool(knife)
-			task.wait(0.05)
+			task.wait(0.05) -- Tiny delay to let tool equip before throwing
 		end
 		
-		local throwOrigin = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
+		local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
 		local predictedPos = getPredictedPosition(bestTarget, ShootOffset + 1)
+		
+		-- EXACT YARHM THROW ARGUMENTS
+		local throwArgs = {
+			CFrame.new(originPos),
+			CFrame.new(predictedPos)
+		}
 		
 		pcall(function()
 			local events = knife:FindFirstChild("Events")
 			if events and events:FindFirstChild("KnifeThrown") then
-				events.KnifeThrown:FireServer(CFrame.new(throwOrigin), CFrame.new(predictedPos))
+				events.KnifeThrown:FireServer(table.unpack(throwArgs))
 			elseif knife:FindFirstChild("Throw") then
-				knife.Throw:FireServer(CFrame.new(throwOrigin), CFrame.new(predictedPos))
+				knife.Throw:FireServer(table.unpack(throwArgs))
 			end
 		end)
 	end
@@ -941,7 +935,7 @@ task.spawn(function()
 	end
 end)
 
--- KILL AURA & KILL ALL (PERFECT HOLD HOSTAGE EXACT MATH)
+-- KILL AURA & KILL ALL (EXACT HOLD HOSTAGE MATH)
 task.spawn(function()
 	while task.wait(0.2) do
 		if not getgenv().PiyapRunning then break end
@@ -1037,7 +1031,7 @@ addConn(RunService.Heartbeat:Connect(function()
 	local myHRP = char:FindFirstChild("HumanoidRootPart")
 	if not myHRP then return end
 
-	-- EXACT YARHM Auto Shoot Sheriff
+	-- EXACT YARHM Auto Shoot Sheriff (UNTOUCHED AND WORKING)
 	if AutoShootSheriff and findSheriff() == LocalPlayer and tick() - lastAutoShoot > 0.5 then
 		local murderer = findMurderer() or findSheriffThatsNotMe()
 		if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
@@ -1127,7 +1121,6 @@ createButton(CombatPage, "Shoot Murderer", function()
 	local originPos = LocalPlayer.Character:FindFirstChild("RightHand") and LocalPlayer.Character.RightHand.Position or LocalPlayer.Character.PrimaryPart.Position
 	local predictedPos = getPredictedPosition(murderer, ShootOffset)
 	
-	-- Exact YARHM Arguments
 	local args = {
 		CFrame.new(originPos),
 		CFrame.new(predictedPos)
