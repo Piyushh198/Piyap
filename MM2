@@ -1,12 +1,4 @@
 local CoreGui = game:GetService("CoreGui")
-
--- PERFECT CLEANUP: Destroy old GUIs to prevent overlaps when re-executing
-for _, gui in pairs(CoreGui:GetChildren()) do
-	if gui.Name == "Piyap" or gui.Name == "PiyapNotifs" then
-		gui:Destroy()
-	end
-end
-
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -14,16 +6,22 @@ local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
 local LocalPlayer = Players.LocalPlayer
 
--- KILL OLD LOOPS & CONNECTIONS
+-- PERFECT CLEANUP
+for _, gui in pairs(CoreGui:GetChildren()) do
+	if gui.Name == "Piyap" or gui.Name == "PiyapNotifs" then
+		gui:Destroy()
+	end
+end
+
 if getgenv().PiyapRunning ~= nil then
 	getgenv().PiyapRunning = false
-	task.wait(0.1) -- Allow old loops to break
+	task.wait(0.1)
 end
 getgenv().PiyapRunning = true
 
 if getgenv().PiyapConnections then
 	for _, conn in ipairs(getgenv().PiyapConnections) do
-		if conn.Disconnect then conn:Disconnect() end
+		if conn.Disconnect then pcall(function() conn:Disconnect() end) end
 	end
 end
 getgenv().PiyapConnections = {}
@@ -685,6 +683,15 @@ end
 
 local ShootOffset = 2.8
 local offsetToPingMult = 1
+local playerData = {}
+
+if game.ReplicatedStorage:WaitForChild("Remotes", 5) then
+	pcall(function()
+		game.ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Gameplay"):WaitForChild("PlayerDataChanged", 5).OnClientEvent:Connect(function(data)
+			playerData = data
+		end)
+	end)
+end
 
 local function getMap()
 	for _, o in ipairs(workspace:GetChildren()) do
@@ -694,38 +701,97 @@ local function getMap()
 end
 
 local function findMurderer()
-	for _, p in pairs(Players:GetPlayers()) do
-		if p.Backpack:FindFirstChild("Knife") or (p.Character and p.Character:FindFirstChild("Knife")) then return p end
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if i.Backpack:FindFirstChild("Knife") then return i end
+	end
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if not i.Character then continue end
+		if i.Character:FindFirstChild("Knife") then return i end
+	end
+	if playerData then
+		for player, data in pairs(playerData) do
+			if data.Role == "Murderer" then
+				if game.Players:FindFirstChild(player) then
+					return game.Players:FindFirstChild(player)
+				end
+			end
+		end
 	end
 	return nil
 end
 
 local function findSheriff()
-	for _, p in pairs(Players:GetPlayers()) do
-		if p.Backpack:FindFirstChild("Gun") or (p.Character and p.Character:FindFirstChild("Gun")) then return p end
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if i.Backpack:FindFirstChild("Gun") then return i end
+	end
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if not i.Character then continue end
+		if i.Character:FindFirstChild("Gun") then return i end
+	end
+	if playerData then
+		for player, data in pairs(playerData) do
+			if data.Role == "Sheriff" then
+				if game.Players:FindFirstChild(player) then
+					return game.Players:FindFirstChild(player)
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function findSheriffThatsNotMe()
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if i == LocalPlayer then continue end
+		if i.Backpack:FindFirstChild("Gun") then return i end
+	end
+	for _, i in ipairs(game.Players:GetPlayers()) do
+		if i == LocalPlayer then continue end
+		if not i.Character then continue end
+		if i.Character:FindFirstChild("Gun") then return i end
+	end
+	if playerData then
+		for player, data in pairs(playerData) do
+			if data.Role == "Sheriff" then
+				if game.Players:FindFirstChild(player) then
+					if game.Players:FindFirstChild(player) == LocalPlayer then continue end
+					return game.Players:FindFirstChild(player)
+				end
+			end
+		end
 	end
 	return nil
 end
 
 local function findNearestPlayer()
-	local nearest = nil
-	local shortestDist = math.huge
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-			local dist = (LocalPlayer.Character.PrimaryPart.Position - p.Character.HumanoidRootPart.Position).Magnitude
-			if dist < shortestDist then
-				shortestDist = dist
-				nearest = p
+	local nearestPlayer = nil
+	local shortestDistance = math.huge
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then 
+			local localRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+			local otherRootPart = player.Character:FindFirstChild("HumanoidRootPart")
+
+			if localRootPart and otherRootPart then
+				local distance = (localRootPart.Position - otherRootPart.Position).Magnitude
+				if distance < shortestDistance then
+					shortestDistance = distance
+					nearestPlayer = player
+				end
 			end
 		end
 	end
-	return nearest
+	return nearestPlayer
 end
 
--- Exact YARHM Prediction Math
-local function getPredictedPosition(player, offset)
-	local playerHRP = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	local playerHum = player.Character and player.Character:FindFirstChild("Humanoid")
+local function getPredictedPosition(player, shootOffset)
+	local ogplayer = player
+	pcall(function()
+		player = player.Character
+	end)
+	if not player then return Vector3.new(0,0,0) end
+	
+	local playerHRP = player:FindFirstChild("UpperTorso") or player:FindFirstChild("HumanoidRootPart")
+	local playerHum = player:FindFirstChild("Humanoid")
 	if not playerHRP or not playerHum then
 		return Vector3.new(0,0,0)
 	end
@@ -733,7 +799,7 @@ local function getPredictedPosition(player, offset)
 	local velocity = playerHRP.AssemblyLinearVelocity
 	local playerMoveDirection = playerHum.MoveDirection
 	
-	local predictedPosition = playerHRP.Position + ((velocity * Vector3.new(0.75, 0.5, 0.75))) * (offset / 15) + playerMoveDirection * offset
+	local predictedPosition = playerHRP.Position + ((velocity * Vector3.new(0.75, 0.5, 0.75))) * (shootOffset / 15) + playerMoveDirection * shootOffset
 	predictedPosition = predictedPosition * (((LocalPlayer:GetNetworkPing() * 1000) * ((offsetToPingMult - 1) * 0.01)) + 1)
 	return predictedPosition
 end
@@ -816,7 +882,7 @@ addConn(workspace.DescendantAdded:Connect(function(ch)
 	end
 end))
 
--- YARHM Auto Throw 
+-- Auto Throw Function 
 local function knifeThrow()
 	if findMurderer() ~= LocalPlayer then return end
 	local char = LocalPlayer.Character
@@ -832,24 +898,20 @@ local function knifeThrow()
 	
 	if knife.Parent ~= char then
 		char.Humanoid:EquipTool(knife)
-		task.wait(0.05) -- Ensure it has time to be equipped and registered
+		task.wait(0.1)
 	end
 	
 	local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
 	local predictedPos = getPredictedPosition(NearestPlayer, ShootOffset + 1)
 	
-	-- Exact YARHM argument structure:
-	local argsThrowRemote = {
-		CFrame.new(originPos),
-		CFrame.new(predictedPos),
-	}
-	
-	local events = knife:FindFirstChild("Events")
-	if events and events:FindFirstChild("KnifeThrown") then
-		events.KnifeThrown:FireServer(unpack(argsThrowRemote))
-	elseif knife:FindFirstChild("Throw") then
-		knife.Throw:FireServer(unpack(argsThrowRemote))
-	end
+	pcall(function()
+		local events = knife:FindFirstChild("Events")
+		if events and events:FindFirstChild("KnifeThrown") then
+			events.KnifeThrown:FireServer(CFrame.new(originPos), CFrame.new(predictedPos))
+		elseif knife:FindFirstChild("Throw") then
+			knife.Throw:FireServer(CFrame.new(originPos), CFrame.new(predictedPos))
+		end
+	end)
 end
 
 task.spawn(function()
@@ -859,7 +921,7 @@ task.spawn(function()
 	end
 end)
 
--- Unified Combat Background Loop (Kill Aura & Hold Hostage)
+-- Unified Combat Background Loop (Kill Aura & Hold Hostage EXACT YARHM MATH)
 task.spawn(function()
 	while task.wait(0.2) do
 		if not getgenv().PiyapRunning then break end
@@ -882,6 +944,7 @@ task.spawn(function()
 							local dist = (targetHrp.Position - char.PrimaryPart.Position).Magnitude
 							
 							local shouldGrab = false
+							
 							if HoldHostageActive then
 								shouldGrab = true
 							elseif KillAuraActive and dist <= KillAuraRange then
@@ -890,11 +953,11 @@ task.spawn(function()
 							
 							if shouldGrab then
 								targetHrp.Anchored = true
+								-- YARHM EXACT MATH
 								targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
 								slashed = true
 								
-								-- Rapid unanchor for physics update
-								task.delay(0.2, function()
+								task.delay(0.3, function()
 									if targetHrp and not HoldHostageActive then targetHrp.Anchored = false end
 								end)
 							end
@@ -903,7 +966,7 @@ task.spawn(function()
 				end
 				
 				if slashed and knife:FindFirstChild("Stab") and KillAuraActive then
-					knife.Stab:FireServer("Slash")
+					pcall(function() knife.Stab:FireServer("Slash") end)
 				end
 			end
 		end
@@ -930,19 +993,13 @@ addConn(RunService.Stepped:Connect(function()
 	local char = LocalPlayer.Character
 	if not char then return end
 
-	-- New Anti-Fling: Removes collisions from your own body locally to stop touch events
+	-- NO-CLIP FIX: Only removes collisions from OTHER players locally to stop them from touching you.
 	if AntiFlingActive then
-		for _, partName in ipairs({"Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart", "Head"}) do
-			local part = char:FindFirstChild(partName)
-			if part and part:IsA("BasePart") then
-				part.CanCollide = false
-			end
-		end
-		
 		for _, p in ipairs(Players:GetPlayers()) do
 			if p ~= LocalPlayer and p.Character then
-				for _, part in ipairs(p.Character:GetDescendants()) do
-					if part:IsA("BasePart") and part.CanCollide then
+				for _, partName in ipairs({"Head", "Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart"}) do
+					local part = p.Character:FindFirstChild(partName)
+					if part and part:IsA("BasePart") then
 						part.CanCollide = false
 					end
 				end
@@ -963,7 +1020,7 @@ addConn(RunService.Heartbeat:Connect(function()
 
 	-- Exact YARHM Auto Shoot Sheriff
 	if AutoShootSheriff and findSheriff() == LocalPlayer and tick() - lastAutoShoot > 0.5 then
-		local murderer = findMurderer()
+		local murderer = findMurderer() or findSheriffThatsNotMe()
 		if murderer and murderer.Character and murderer.Character:FindFirstChild("HumanoidRootPart") then
 			local gun = char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
 			if gun then
@@ -982,8 +1039,8 @@ addConn(RunService.Heartbeat:Connect(function()
 						task.wait(0.1)
 					end
 					
-					local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or myHRP.Position
 					local predictedPos = getPredictedPosition(murderer, ShootOffset)
+					local originPos = char:FindFirstChild("RightHand") and char.RightHand.Position or char.PrimaryPart.Position
 					
 					-- Exact YARHM Arguments
 					local args = {
@@ -991,14 +1048,16 @@ addConn(RunService.Heartbeat:Connect(function()
 						CFrame.new(predictedPos)
 					}
 					
-					if gun:FindFirstChild("Shoot") then
-						gun.Shoot:FireServer(unpack(args))
-					end
-					
-					local knifeLocal = gun:FindFirstChild("KnifeLocal")
-					if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
-						knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, predictedPos, "AH2")
-					end
+					pcall(function()
+						if gun:FindFirstChild("Shoot") then
+							gun.Shoot:FireServer(table.unpack(args))
+						end
+						
+						local knifeLocal = gun:FindFirstChild("KnifeLocal")
+						if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
+							knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, predictedPos, "AH2")
+						end
+					end)
 					lastAutoShoot = tick()
 				end
 			end
@@ -1029,12 +1088,22 @@ createSlider(CombatPage, "Shoot Predict Offset", 0, 10, 3, function(value)
 end)
 
 createButton(CombatPage, "Shoot Murderer", function()
-	if findSheriff() ~= LocalPlayer then sendNotification("Error", "You are not the Sheriff!", 3) return end
-	local murderer = findMurderer()
-	if not murderer or not murderer.Character or not murderer.Character:FindFirstChild("HumanoidRootPart") then sendNotification("Error", "No murderer found!", 3) return end
+	if findSheriff() ~= LocalPlayer then 
+		sendNotification("Error", "You're not sheriff/hero.", 3) 
+		return 
+	end
+	
+	local murderer = findMurderer() or findSheriffThatsNotMe()
+	if not murderer then
+		sendNotification("Error", "No murderer (or sheriff) to shoot.", 3)
+		return
+	end
 	
 	local gun = LocalPlayer.Character:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
-	if not gun then return end
+	if not gun then 
+		sendNotification("Error", "You don't have the gun..?", 3)
+		return 
+	end
 	LocalPlayer.Character.Humanoid:EquipTool(gun)
 	task.wait(0.05)
 	
@@ -1047,14 +1116,16 @@ createButton(CombatPage, "Shoot Murderer", function()
 		CFrame.new(predictedPos)
 	}
 	
-	if gun:FindFirstChild("Shoot") then
-		gun.Shoot:FireServer(unpack(args))
-	end
-	
-	local knifeLocal = gun:FindFirstChild("KnifeLocal")
-	if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
-		knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, predictedPos, "AH2")
-	end
+	pcall(function()
+		if gun:FindFirstChild("Shoot") then
+			gun.Shoot:FireServer(table.unpack(args))
+		end
+		
+		local knifeLocal = gun:FindFirstChild("KnifeLocal")
+		if knifeLocal and knifeLocal:FindFirstChild("CreateBeam") and knifeLocal.CreateBeam:FindFirstChild("RemoteFunction") then
+			knifeLocal.CreateBeam.RemoteFunction:InvokeServer(1, predictedPos, "AH2")
+		end
+	end)
 	
 	sendNotification("Combat", "Shot at the Murderer!", 3)
 end)
@@ -1064,48 +1135,50 @@ createToggle(CombatPage, "Auto Shoot Murderer", false, function(state)
 	sendNotification("Combat", "Auto Shoot " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
-createButton(CombatPage, "Knife Throw to Closest", function()
-	knifeThrow()
-	sendNotification("Combat", "Attempted knife throw.", 3)
-end)
-
 createToggle(CombatPage, "Auto Knife Throw", false, function(state)
 	AutoThrowActive = state
 	sendNotification("Combat", "Auto Throw " .. (state and "Enabled" or "Disabled"), 3)
 end)
 
 createButton(CombatPage, "Kill All", function()
-	if findMurderer() ~= LocalPlayer then sendNotification("Error", "You are not the Murderer!", 3) return end
+	if findMurderer() ~= LocalPlayer then sendNotification("Error", "You're not murderer.", 3) return end
 	local char = LocalPlayer.Character
 	if not char or not char:FindFirstChild("PrimaryPart") then return end
 	local knife = char:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
-	if not knife then sendNotification("Error", "Knife not found!", 3) return end
+	if not knife then sendNotification("Error", "You don't have the knife..?", 3) return end
 	
 	char.Humanoid:EquipTool(knife)
 	task.wait(0.1)
 
 	task.spawn(function()
-		for i = 1, 6 do
+		for i = 1, 10 do
 			if not getgenv().PiyapRunning then break end
 			local slashed = false
 			
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-					local targetHrp = p.Character.HumanoidRootPart
+			for _, player in ipairs(Players:GetPlayers()) do
+				if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+					local targetHrp = player.Character.HumanoidRootPart
 					targetHrp.Anchored = true
+					-- YARHM EXACT MATH
 					targetHrp.CFrame = char.PrimaryPart.CFrame * CFrame.new(0, 0, -3)
 					slashed = true
 					
-					task.delay(0.2, function()
+					task.delay(0.3, function()
 						if targetHrp then targetHrp.Anchored = false end
 					end)
 				end
 			end
 			
 			if slashed and knife:FindFirstChild("Stab") then
-				knife.Stab:FireServer("Slash")
+				pcall(function() knife.Stab:FireServer("Slash") end)
 			end
 			task.wait(0.3)
+		end
+		
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+				player.Character.HumanoidRootPart.Anchored = false
+			end
 		end
 		sendNotification("Combat", "Kill All complete!", 3)
 	end)
@@ -1286,8 +1359,13 @@ end)
 createButton(TeleportsPage, "Teleport to Lobby", function()
 	local lobby = workspace:FindFirstChild("Lobby")
 	if lobby and lobby:FindFirstChild("Spawns") then
-		LocalPlayer.Character:PivotTo(lobby.Spawns:GetChildren()[1].CFrame + Vector3.new(0, 4, 0))
-		sendNotification("Teleport", "Teleported to Lobby", 3)
+		local spawnLoc = lobby.Spawns:FindFirstChildWhichIsA("SpawnLocation")
+		if spawnLoc then
+			LocalPlayer.Character:PivotTo(spawnLoc.CFrame + Vector3.new(0, 4, 0))
+			sendNotification("Teleport", "Teleported to Lobby", 3)
+		else
+			sendNotification("Error", "Lobby spawn not found.", 3)
+		end
 	end
 end)
 
@@ -1295,8 +1373,11 @@ createButton(TeleportsPage, "Teleport to Map", function()
 	local map = getMap()
 	if map and map:FindFirstChild("Spawns") then
 		local spawns = map.Spawns:GetChildren()
-		LocalPlayer.Character:PivotTo(spawns[math.random(1, #spawns)].CFrame + Vector3.new(0, 4, 0))
+		local randomSpawn = spawns[math.random(1, #spawns)]
+		LocalPlayer.Character:PivotTo(randomSpawn.CFrame + Vector3.new(0, 4, 0))
 		sendNotification("Teleport", "Teleported to Map", 3)
+	else
+		sendNotification("Error", "Map spawn not found.", 3)
 	end
 end)
 
