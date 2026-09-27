@@ -1,0 +1,83 @@
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    task.wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+-- Friend Caching System (Prevents Fast Attack from targeting friends)
+local friendCache = {}
+local function cacheFriends()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            task.spawn(function()
+                pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end)
+            end)
+        end
+    end
+end
+cacheFriends()
+
+Players.PlayerAdded:Connect(function(p)
+    task.spawn(function()
+        pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end)
+    end)
+end)
+
+-- Fast Attack Loop (Always Enabled)
+task.spawn(function()
+    local Net = ReplicatedStorage:WaitForChild("Modules", 5) and ReplicatedStorage.Modules:WaitForChild("Net", 5)
+    local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 5)
+    local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
+
+    while task.wait(0.08) do
+        if RegisterAttack and RegisterHit then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local myRoot = char and char:FindFirstChild("HumanoidRootPart")
+                if not myRoot then return end
+
+                local targets = {}
+                local primaryHit = nil
+
+                -- Target NPCs
+                local enemies = Workspace:FindFirstChild("Enemies")
+                if enemies then
+                    for _, mob in ipairs(enemies:GetChildren()) do
+                        local hum = mob:FindFirstChildOfClass("Humanoid")
+                        local head = mob:FindFirstChild("Head")
+                        local root = mob:FindFirstChild("HumanoidRootPart")
+                        if hum and head and root and hum.Health > 0 and (root.Position - myRoot.Position).Magnitude <= 200 then
+                            table.insert(targets, {mob, head})
+                            primaryHit = head
+                        end
+                    end
+                end
+
+                -- Target Players (Ignores Friends)
+                for _, other in ipairs(Players:GetPlayers()) do
+                    if other ~= LocalPlayer and not friendCache[other.UserId] and other.Character then
+                        local pHum = other.Character:FindFirstChildOfClass("Humanoid")
+                        local pHead = other.Character:FindFirstChild("Head")
+                        local pRoot = other.Character:FindFirstChild("HumanoidRootPart")
+                        if pHum and pHead and pRoot and pHum.Health > 0 and (pRoot.Position - myRoot.Position).Magnitude <= 200 then
+                            table.insert(targets, {other.Character, pHead})
+                            primaryHit = pHead
+                        end
+                    end
+                end
+
+                -- Fire Remotes if targets exist
+                if primaryHit and #targets > 0 then
+                    RegisterAttack:FireServer(0)
+                    RegisterHit:FireServer(primaryHit, targets)
+                end
+            end)
+        end
+    end
+end)
+
+print("[FAST ATTACK] Enabled and running.")
