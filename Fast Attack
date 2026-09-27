@@ -1,7 +1,11 @@
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + ANTI-RUBBERBAND TWEEN
+
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do
@@ -12,10 +16,10 @@ end
 -- Execute Notification
 pcall(function()
     StarterGui:SetCore("SendNotification", {
-        Title = "Coco Hub",
-        Text = "Fast attack loaded",
+        Title = "Piyap Hub",
+        Text = "Fast attack loaded. Press ';' to open Command Bar.",
         Duration = 5,
-        Icon = "rbxassetid://6023426923" -- Optional default info icon
+        Icon = "rbxassetid://6023426923"
     })
 end)
 
@@ -91,4 +95,200 @@ task.spawn(function()
     end
 end)
 
-print("[FAST ATTACK] Enabled and running.")
+-- COMMAND BAR & MOVEMENT SYSTEM
+
+_G.TweenSpeed = 200
+_G.LoopTweenTarget = nil
+
+local noclipConn = nil
+local moveConn = nil
+local antiFallBv = nil
+local isHuntingMode = false
+
+local function stopMovement()
+    if moveConn then moveConn:Disconnect() moveConn = nil end
+    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+    if antiFallBv then antiFallBv:Destroy() antiFallBv = nil end
+    _G.LoopTweenTarget = nil
+    isHuntingMode = false
+end
+
+local function enableNoclip()
+    if not noclipConn then
+        noclipConn = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, v in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if v:IsA("BasePart") then v.CanCollide = false end
+                end
+            end
+        end)
+    end
+end
+
+-- Heartbeat CFrame loop to prevent server desync/rubberbanding
+local function startMovement(targetCFrame, targetPlayer, hunting)
+    stopMovement()
+    
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    _G.LoopTweenTarget = targetPlayer
+    isHuntingMode = hunting
+
+    -- BodyVelocity to fight gravity without anchoring (prevents teleporting back)
+    antiFallBv = Instance.new("BodyVelocity")
+    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    antiFallBv.Velocity = Vector3.zero
+    antiFallBv.Parent = hrp
+
+    enableNoclip()
+
+    moveConn = RunService.Heartbeat:Connect(function(dt)
+        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then stopMovement() return end
+
+        local targetPos
+        
+        -- If tracking a player
+        if _G.LoopTweenTarget then
+            local tChar = _G.LoopTweenTarget.Character
+            local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
+            local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
+            
+            if isHuntingMode and tHum and tHum.Health <= 0 then
+                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Target eliminated. Hunt ended.", Duration = 4})
+                stopMovement()
+                return
+            end
+            
+            if tHrp then
+                targetPos = tHrp.Position
+            else
+                stopMovement()
+                return
+            end
+        else
+            -- If statically tweening to a position
+            targetPos = targetCFrame.Position
+        end
+
+        local dir = (targetPos - myHrp.Position)
+        local dist = dir.Magnitude
+        
+        if dist > 3 then
+            local step = _G.TweenSpeed * dt
+            if step > dist then step = dist end
+            myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, targetPos)
+        else
+            if not _G.LoopTweenTarget then
+                stopMovement() -- Arrived at static tween destination
+            end
+        end
+    end)
+end
+
+local function getPlayer(str)
+    if not str then return nil end
+    str = string.lower(str)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if string.sub(string.lower(p.Name), 1, #str) == str or string.sub(string.lower(p.DisplayName), 1, #str) == str then
+                return p
+            end
+        end
+    end
+    return nil
+end
+
+-- UI Setup
+local getSafeGuiParent = function()
+    local pcallSuccess, gui = pcall(function() return gethui() end)
+    if pcallSuccess and gui then return gui end
+    return game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PiyapCommandBar"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = getSafeGuiParent()
+
+local CmdBar = Instance.new("TextBox")
+CmdBar.Size = UDim2.new(0, 300, 0, 35)
+CmdBar.Position = UDim2.new(0.5, -150, 0, 20) -- Top center
+CmdBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+CmdBar.BorderColor3 = Color3.fromRGB(80, 120, 200)
+CmdBar.BorderSizePixel = 2
+CmdBar.Font = Enum.Font.GothamMedium
+CmdBar.TextSize = 14
+CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+CmdBar.PlaceholderText = "Type command here (e.g., hunt username)"
+CmdBar.ClearTextOnFocus = false
+CmdBar.Visible = false -- Hidden by default
+CmdBar.Parent = ScreenGui
+
+local CmdCorner = Instance.new("UICorner")
+CmdCorner.CornerRadius = UDim.new(0, 6)
+CmdCorner.Parent = CmdBar
+
+local function openCmdBar()
+    CmdBar.Visible = true
+    CmdBar.Text = ""
+    task.wait() 
+    CmdBar:CaptureFocus()
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then
+        openCmdBar()
+    end
+end)
+
+CmdBar.FocusLost:Connect(function(enterPressed)
+    CmdBar.Visible = false 
+    
+    if enterPressed then
+        local text = CmdBar.Text
+        CmdBar.Text = "" 
+        
+        if text:sub(1, 1) == ";" then text = text:sub(2) end
+        
+        local args = string.split(text, " ")
+        local cmd = string.lower(args[1])
+        
+        if cmd == "tween" or cmd == "t" then
+            local p = getPlayer(args[2])
+            if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
+            end
+        elseif cmd == "tweenspeed" then
+            local spd = tonumber(args[2])
+            if spd then 
+                _G.TweenSpeed = spd 
+                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Tween Speed set to " .. spd, Duration = 3})
+            end
+        elseif cmd == "looptween" or cmd == "ltween" then
+            local p = getPlayer(args[2])
+            if p then
+                startMovement(nil, p, false)
+            end
+        elseif cmd == "hunt" or cmd == "h" then
+            local p = getPlayer(args[2])
+            if p then
+                startMovement(nil, p, true)
+            end
+        elseif cmd == "re" then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Health = 0 end
+        elseif cmd == "stop" then
+            stopMovement()
+        elseif cmd == "cmds" then
+            StarterGui:SetCore("SendNotification", {
+                Title = "Piyap Hub Commands",
+                Text = "t/tween [plr]\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
+                Duration = 8
+            })
+        end
+    end
+end)
+
+print("[PIYAP HUB] Fast Attack & Command Bar loaded.")
