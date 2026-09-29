@@ -256,9 +256,14 @@ CmdBar.FocusLost:Connect(function(enterPressed)
         local cmd = string.lower(args[1])
         
         if cmd == "tween" or cmd == "t" then
-            local p = getPlayer(args[2])
-            if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
+            if args[2] and string.lower(args[2]) == "dark" then
+                local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
+                startMovement(darkCFrame, nil, false)
+            else
+                local p = getPlayer(args[2])
+                if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
+                end
             end
         elseif cmd == "tweenspeed" then
             local spd = tonumber(args[2])
@@ -284,7 +289,7 @@ CmdBar.FocusLost:Connect(function(enterPressed)
         elseif cmd == "cmds" then
             StarterGui:SetCore("SendNotification", {
                 Title = "Piyap Hub Commands",
-                Text = "t/tween [plr]\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
+                Text = "t/tween [plr]\nt dark\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
                 Duration = 8
             })
         end
