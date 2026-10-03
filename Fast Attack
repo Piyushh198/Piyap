@@ -1,4 +1,4 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + ANTI-RUBBERBAND TWEEN
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + PROTECTION SYSTEM
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -102,11 +102,17 @@ _G.LoopTweenTarget = nil
 
 local noclipConn = nil
 local moveConn = nil
+local upMoveConn = nil
 local antiFallBv = nil
 local isHuntingMode = false
 
+-- Protection System Variables
+local isProtecting = false
+local manualOverride = false
+
 local function stopMovement()
     if moveConn then moveConn:Disconnect() moveConn = nil end
+    if upMoveConn then upMoveConn:Disconnect() upMoveConn = nil end
     if noclipConn then noclipConn:Disconnect() noclipConn = nil end
     if antiFallBv then antiFallBv:Destroy() antiFallBv = nil end
     _G.LoopTweenTarget = nil
@@ -125,6 +131,29 @@ local function enableNoclip()
     end
 end
 
+-- Continuous upward movement
+local function startUpwardMovement()
+    stopMovement()
+    
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    antiFallBv = Instance.new("BodyVelocity")
+    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    antiFallBv.Velocity = Vector3.zero
+    antiFallBv.Parent = hrp
+
+    enableNoclip()
+
+    upMoveConn = RunService.Heartbeat:Connect(function(dt)
+        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then stopMovement() return end
+        
+        local step = _G.TweenSpeed * dt
+        myHrp.CFrame = myHrp.CFrame + Vector3.new(0, step, 0)
+    end)
+end
+
 -- Heartbeat CFrame loop to prevent server desync/rubberbanding
 local function startMovement(targetCFrame, targetPlayer, hunting)
     stopMovement()
@@ -135,7 +164,6 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
     _G.LoopTweenTarget = targetPlayer
     isHuntingMode = hunting
 
-    -- BodyVelocity to fight gravity without anchoring (prevents teleporting back)
     antiFallBv = Instance.new("BodyVelocity")
     antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     antiFallBv.Velocity = Vector3.zero
@@ -149,7 +177,6 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
 
         local targetPos
         
-        -- If tracking a player
         if _G.LoopTweenTarget then
             local tChar = _G.LoopTweenTarget.Character
             local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
@@ -168,7 +195,6 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
                 return
             end
         else
-            -- If statically tweening to a position
             targetPos = targetCFrame.Position
         end
 
@@ -181,11 +207,47 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
             myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, targetPos)
         else
             if not _G.LoopTweenTarget then
-                stopMovement() -- Arrived at static tween destination
+                stopMovement() 
             end
         end
     end)
 end
+
+-- Protection System Background Loop
+task.spawn(function()
+    while task.wait(0.2) do
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        
+        if hum and hum.Health > 0 then
+            local pct = hum.Health / hum.MaxHealth
+            
+            if pct <= 0.10 then
+                if not isProtecting and not manualOverride then
+                    isProtecting = true
+                    startUpwardMovement()
+                    pcall(function()
+                        StarterGui:SetCore("SendNotification", {Title = "Protection Enabled", Text = "Health critical! Evading upwards.", Duration = 3})
+                    end)
+                end
+            elseif pct >= 0.50 then
+                if isProtecting or manualOverride then
+                    if isProtecting then
+                        stopMovement()
+                        pcall(function()
+                            StarterGui:SetCore("SendNotification", {Title = "Protection Disabled", Text = "Health recovered. Stopping evasion.", Duration = 3})
+                        end)
+                    end
+                    isProtecting = false
+                    manualOverride = false
+                end
+            end
+        else
+            isProtecting = false
+            manualOverride = false
+        end
+    end
+end)
 
 local function getPlayer(str)
     if not str then return nil end
@@ -214,7 +276,7 @@ ScreenGui.Parent = getSafeGuiParent()
 
 local CmdBar = Instance.new("TextBox")
 CmdBar.Size = UDim2.new(0, 300, 0, 35)
-CmdBar.Position = UDim2.new(0.5, -150, 0, 20) -- Top center
+CmdBar.Position = UDim2.new(0.5, -150, 0, 20) 
 CmdBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 CmdBar.BorderColor3 = Color3.fromRGB(80, 120, 200)
 CmdBar.BorderSizePixel = 2
@@ -223,7 +285,7 @@ CmdBar.TextSize = 14
 CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 CmdBar.PlaceholderText = "Type command here (e.g., hunt username)"
 CmdBar.ClearTextOnFocus = false
-CmdBar.Visible = false -- Hidden by default
+CmdBar.Visible = false 
 CmdBar.Parent = ScreenGui
 
 local CmdCorner = Instance.new("UICorner")
@@ -265,6 +327,8 @@ CmdBar.FocusLost:Connect(function(enterPressed)
                     startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
                 end
             end
+        elseif cmd == "up" then
+            startUpwardMovement()
         elseif cmd == "tweenspeed" then
             local spd = tonumber(args[2])
             if spd then 
@@ -286,14 +350,18 @@ CmdBar.FocusLost:Connect(function(enterPressed)
             if hum then hum.Health = 0 end
         elseif cmd == "stop" then
             stopMovement()
+            if isProtecting then
+                manualOverride = true -- Allow the user to force-stop protection evasion
+                isProtecting = false
+            end
         elseif cmd == "cmds" then
             StarterGui:SetCore("SendNotification", {
                 Title = "Piyap Hub Commands",
-                Text = "t/tween [plr]\nt dark\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
+                Text = "t/tween [plr]\nt dark\nup\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
                 Duration = 8
             })
         end
     end
 end)
 
-print("[PIYAP HUB] Fast Attack & Command Bar loaded.")
+print("[PIYAP HUB] Protection System & Command Bar loaded.")
