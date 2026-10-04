@@ -1,4 +1,4 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + PROTECTION SYSTEM
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + AUTO-SAVE + CLEANUP
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do
@@ -13,17 +14,90 @@ while not LocalPlayer do
     LocalPlayer = Players.LocalPlayer
 end
 
--- Execute Notification
+--========================================================================
+-- CLEANUP & PREVENT DUPLICATES
+--========================================================================
+if _G.PiyapHub_Connections then
+    for _, conn in pairs(_G.PiyapHub_Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+end
+_G.PiyapHub_Connections = {}
+
+local function addConn(conn)
+    table.insert(_G.PiyapHub_Connections, conn)
+    return conn
+end
+
+if _G.PiyapHub_RunningId then
+    _G.PiyapHub_RunningId = _G.PiyapHub_RunningId + 1
+else
+    _G.PiyapHub_RunningId = 1
+end
+local CURRENT_RUN_ID = _G.PiyapHub_RunningId
+
+local getSafeGuiParent = function()
+    local pcallSuccess, gui = pcall(function() return gethui() end)
+    if pcallSuccess and gui then return gui end
+    return game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local targetParent = getSafeGuiParent()
+pcall(function()
+    local old = targetParent:FindFirstChild("PiyapCommandBar")
+    if old then old:Destroy() end
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp = char.HumanoidRootPart
+        if hrp:FindFirstChild("PiyapFlyVelocity") then hrp.PiyapFlyVelocity:Destroy() end
+        if hrp:FindFirstChild("PiyapFlyGyro") then hrp.PiyapFlyGyro:Destroy() end
+        if hrp:FindFirstChild("AntiFallBv") then hrp.AntiFallBv:Destroy() end
+        hrp.Anchored = false
+    end
+end)
+
 pcall(function()
     StarterGui:SetCore("SendNotification", {
         Title = "Piyap Hub",
-        Text = "Fast attack loaded. Press ';' to open Command Bar.",
+        Text = "Loaded successfully. Press ';' for commands.",
         Duration = 5,
         Icon = "rbxassetid://6023426923"
     })
 end)
 
--- Friend Caching System (Prevents Fast Attack from targeting friends)
+--========================================================================
+-- SETTINGS & AUTO-SAVE
+--========================================================================
+local settingsFile = "PiyapHub_Settings.json"
+_G.PiyapSettings = _G.PiyapSettings or {
+    FlyKey = "P",
+    FlySpeed = 120,
+    TweenSpeed = 200
+}
+
+local function saveSettings()
+    pcall(function()
+        if writefile then
+            writefile(settingsFile, HttpService:JSONEncode(_G.PiyapSettings))
+        end
+    end)
+end
+
+pcall(function()
+    if isfile and isfile(settingsFile) then
+        local data = readfile(settingsFile)
+        local parsed = HttpService:JSONDecode(data)
+        if parsed then
+            for k, v in pairs(parsed) do
+                _G.PiyapSettings[k] = v
+            end
+        end
+    end
+end)
+
+--========================================================================
+-- FRIEND CACHE
+--========================================================================
 local friendCache = {}
 local function cacheFriends()
     for _, p in ipairs(Players:GetPlayers()) do
@@ -35,20 +109,23 @@ local function cacheFriends()
     end
 end
 cacheFriends()
-
-Players.PlayerAdded:Connect(function(p)
+addConn(Players.PlayerAdded:Connect(function(p)
     task.spawn(function()
         pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end)
     end)
-end)
+end))
 
--- Fast Attack Loop (Always Enabled)
+--========================================================================
+-- FAST ATTACK (ALWAYS ON)
+--========================================================================
 task.spawn(function()
     local Net = ReplicatedStorage:WaitForChild("Modules", 5) and ReplicatedStorage.Modules:WaitForChild("Net", 5)
     local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 5)
     local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
 
     while task.wait(0.08) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end -- Kill old loop
+        
         if RegisterAttack and RegisterHit then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -58,7 +135,6 @@ task.spawn(function()
                 local targets = {}
                 local primaryHit = nil
 
-                -- Target NPCs
                 local enemies = Workspace:FindFirstChild("Enemies")
                 if enemies then
                     for _, mob in ipairs(enemies:GetChildren()) do
@@ -72,7 +148,6 @@ task.spawn(function()
                     end
                 end
 
-                -- Target Players (Ignores Friends)
                 for _, other in ipairs(Players:GetPlayers()) do
                     if other ~= LocalPlayer and not friendCache[other.UserId] and other.Character then
                         local pHum = other.Character:FindFirstChildOfClass("Humanoid")
@@ -85,7 +160,6 @@ task.spawn(function()
                     end
                 end
 
-                -- Fire Remotes if targets exist
                 if primaryHit and #targets > 0 then
                     RegisterAttack:FireServer(0)
                     RegisterHit:FireServer(primaryHit, targets)
@@ -95,9 +169,91 @@ task.spawn(function()
     end
 end)
 
--- COMMAND BAR & MOVEMENT SYSTEM
+--========================================================================
+-- FLY SYSTEM
+--========================================================================
+local FlyKeys = {W = false, A = false, S = false, D = false, Space = false, Control = false}
+local flyConn = nil
+local isFlying = false
 
-_G.TweenSpeed = 200
+local function clearFlyMovement()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            if root:FindFirstChild("PiyapFlyVelocity") then root.PiyapFlyVelocity:Destroy() end
+            if root:FindFirstChild("PiyapFlyGyro") then root.PiyapFlyGyro:Destroy() end
+        end
+    end)
+end
+
+local function stopFly()
+    isFlying = false
+    if flyConn then flyConn:Disconnect() flyConn = nil end
+    clearFlyMovement()
+end
+
+local function startFly()
+    stopFly()
+    isFlying = true
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "PiyapFlyVelocity"
+    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bv.Velocity = Vector3.zero
+    bv.Parent = root
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "PiyapFlyGyro"
+    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bg.P = 15000
+    bg.CFrame = root.CFrame
+    bg.Parent = root
+
+    local Cam = Workspace.CurrentCamera
+    flyConn = RunService.RenderStepped:Connect(function()
+        if not isFlying then stopFly() return end
+
+        local curChar = LocalPlayer.Character
+        local curRoot = curChar and curChar:FindFirstChild("HumanoidRootPart")
+        if not curRoot then return end
+
+        if bv.Parent ~= curRoot then bv.Parent = curRoot end
+        if bg.Parent ~= curRoot then bg.Parent = curRoot end
+
+        for _, part in ipairs(curChar:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+
+        bg.CFrame = Cam.CFrame
+
+        local dir = Vector3.zero
+        if FlyKeys.W then dir += Cam.CFrame.LookVector end
+        if FlyKeys.S then dir -= Cam.CFrame.LookVector end
+        if FlyKeys.D then dir += Cam.CFrame.RightVector end
+        if FlyKeys.A then dir -= Cam.CFrame.RightVector end
+        if FlyKeys.Space then dir += Vector3.new(0, 1, 0) end
+        if FlyKeys.Control then dir -= Vector3.new(0, 1, 0) end
+
+        if dir.Magnitude > 0 then
+            bv.Velocity = dir.Unit * math.clamp(_G.PiyapSettings.FlySpeed, 20, 1000)
+        else
+            bv.Velocity = Vector3.zero
+        end
+    end)
+    addConn(flyConn)
+end
+
+local function toggleFly()
+    if isFlying then stopFly() else startFly() end
+end
+
+--========================================================================
+-- TWEEN / MOVEMENT SYSTEM
+--========================================================================
 _G.LoopTweenTarget = nil
 
 local noclipConn = nil
@@ -106,7 +262,6 @@ local upMoveConn = nil
 local antiFallBv = nil
 local isHuntingMode = false
 
--- Protection System Variables
 local isProtecting = false
 local manualOverride = false
 
@@ -128,17 +283,17 @@ local function enableNoclip()
                 end
             end
         end)
+        addConn(noclipConn)
     end
 end
 
--- Continuous upward movement
 local function startUpwardMovement()
     stopMovement()
-    
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
     antiFallBv = Instance.new("BodyVelocity")
+    antiFallBv.Name = "AntiFallBv"
     antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     antiFallBv.Velocity = Vector3.zero
     antiFallBv.Parent = hrp
@@ -149,15 +304,14 @@ local function startUpwardMovement()
         local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not myHrp then stopMovement() return end
         
-        local step = _G.TweenSpeed * dt
+        local step = _G.PiyapSettings.TweenSpeed * dt
         myHrp.CFrame = myHrp.CFrame + Vector3.new(0, step, 0)
     end)
+    addConn(upMoveConn)
 end
 
--- Heartbeat CFrame loop to prevent server desync/rubberbanding
 local function startMovement(targetCFrame, targetPlayer, hunting)
     stopMovement()
-    
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
@@ -165,6 +319,7 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
     isHuntingMode = hunting
 
     antiFallBv = Instance.new("BodyVelocity")
+    antiFallBv.Name = "AntiFallBv"
     antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     antiFallBv.Velocity = Vector3.zero
     antiFallBv.Parent = hrp
@@ -188,12 +343,8 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
                 return
             end
             
-            if tHrp then
-                targetPos = tHrp.Position
-            else
-                stopMovement()
-                return
-            end
+            if tHrp then targetPos = tHrp.Position
+            else stopMovement() return end
         else
             targetPos = targetCFrame.Position
         end
@@ -202,41 +353,37 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
         local dist = dir.Magnitude
         
         if dist > 3 then
-            local step = _G.TweenSpeed * dt
+            local step = _G.PiyapSettings.TweenSpeed * dt
             if step > dist then step = dist end
             myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, targetPos)
         else
-            if not _G.LoopTweenTarget then
-                stopMovement() 
-            end
+            if not _G.LoopTweenTarget then stopMovement() end
         end
     end)
+    addConn(moveConn)
 end
 
--- Protection System Background Loop
+-- Protection Loop
 task.spawn(function()
     while task.wait(0.2) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end
+        
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         
         if hum and hum.Health > 0 then
             local pct = hum.Health / hum.MaxHealth
-            
             if pct <= 0.10 then
                 if not isProtecting and not manualOverride then
                     isProtecting = true
                     startUpwardMovement()
-                    pcall(function()
-                        StarterGui:SetCore("SendNotification", {Title = "Protection Enabled", Text = "Health critical! Evading upwards.", Duration = 3})
-                    end)
+                    pcall(function() StarterGui:SetCore("SendNotification", {Title = "Protection Enabled", Text = "Health critical! Evading.", Duration = 3}) end)
                 end
             elseif pct >= 0.50 then
                 if isProtecting or manualOverride then
                     if isProtecting then
                         stopMovement()
-                        pcall(function()
-                            StarterGui:SetCore("SendNotification", {Title = "Protection Disabled", Text = "Health recovered. Stopping evasion.", Duration = 3})
-                        end)
+                        pcall(function() StarterGui:SetCore("SendNotification", {Title = "Protection Disabled", Text = "Health recovered.", Duration = 3}) end)
                     end
                     isProtecting = false
                     manualOverride = false
@@ -262,17 +409,13 @@ local function getPlayer(str)
     return nil
 end
 
--- UI Setup
-local getSafeGuiParent = function()
-    local pcallSuccess, gui = pcall(function() return gethui() end)
-    if pcallSuccess and gui then return gui end
-    return game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
-end
-
+--========================================================================
+-- UI SETUP (COMMAND BAR)
+--========================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "PiyapCommandBar"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = getSafeGuiParent()
+ScreenGui.Parent = targetParent
 
 local CmdBar = Instance.new("TextBox")
 CmdBar.Size = UDim2.new(0, 300, 0, 35)
@@ -283,7 +426,7 @@ CmdBar.BorderSizePixel = 2
 CmdBar.Font = Enum.Font.GothamMedium
 CmdBar.TextSize = 14
 CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-CmdBar.PlaceholderText = "Type command here (e.g., hunt username)"
+CmdBar.PlaceholderText = "Command (e.g. hunt username)"
 CmdBar.ClearTextOnFocus = false
 CmdBar.Visible = false 
 CmdBar.Parent = ScreenGui
@@ -299,19 +442,47 @@ local function openCmdBar()
     CmdBar:CaptureFocus()
 end
 
-UserInputService.InputBegan:Connect(function(input, gpe)
+--========================================================================
+-- INPUT HANDLING
+--========================================================================
+addConn(UserInputService.InputBegan:Connect(function(input, gpe)
     if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then
         openCmdBar()
     end
-end)
 
-CmdBar.FocusLost:Connect(function(enterPressed)
-    CmdBar.Visible = false 
+    if not gpe and input.KeyCode.Name == string.upper(_G.PiyapSettings.FlyKey) then
+        toggleFly()
+    end
+
+    if gpe then return end
     
+    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = true
+    elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = true
+    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = true
+    elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = true
+    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = true
+    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = true
+    end
+end))
+
+addConn(UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = false
+    elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = false
+    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = false
+    elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = false
+    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = false
+    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = false
+    end
+end))
+
+--========================================================================
+-- COMMAND LOGIC
+--========================================================================
+addConn(CmdBar.FocusLost:Connect(function(enterPressed)
+    CmdBar.Visible = false 
     if enterPressed then
         local text = CmdBar.Text
         CmdBar.Text = "" 
-        
         if text:sub(1, 1) == ";" then text = text:sub(2) end
         
         local args = string.split(text, " ")
@@ -332,36 +503,47 @@ CmdBar.FocusLost:Connect(function(enterPressed)
         elseif cmd == "tweenspeed" then
             local spd = tonumber(args[2])
             if spd then 
-                _G.TweenSpeed = spd 
+                _G.PiyapSettings.TweenSpeed = spd 
+                saveSettings()
                 StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Tween Speed set to " .. spd, Duration = 3})
             end
         elseif cmd == "looptween" or cmd == "ltween" then
             local p = getPlayer(args[2])
-            if p then
-                startMovement(nil, p, false)
-            end
+            if p then startMovement(nil, p, false) end
         elseif cmd == "hunt" or cmd == "h" then
             local p = getPlayer(args[2])
-            if p then
-                startMovement(nil, p, true)
-            end
+            if p then startMovement(nil, p, true) end
         elseif cmd == "re" then
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.Health = 0 end
         elseif cmd == "stop" then
             stopMovement()
             if isProtecting then
-                manualOverride = true -- Allow the user to force-stop protection evasion
+                manualOverride = true 
                 isProtecting = false
+            end
+        elseif cmd == "flykey" then
+            local newKey = args[2]
+            if newKey then
+                _G.PiyapSettings.FlyKey = string.upper(newKey)
+                saveSettings()
+                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Fly Key set to " .. string.upper(newKey), Duration = 3})
+            end
+        elseif cmd == "flyspeed" then
+            local spd = tonumber(args[2])
+            if spd then 
+                _G.PiyapSettings.FlySpeed = spd 
+                saveSettings()
+                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Fly Speed set to " .. spd, Duration = 3})
             end
         elseif cmd == "cmds" then
             StarterGui:SetCore("SendNotification", {
                 Title = "Piyap Hub Commands",
-                Text = "t/tween [plr]\nt dark\nup\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nre\nstop\ncmds",
-                Duration = 8
+                Text = "t/tween [plr/dark]\nup\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nflykey [key]\nflyspeed [num]\nre\nstop",
+                Duration = 10
             })
         end
     end
-end)
+end))
 
-print("[PIYAP HUB] Protection System & Command Bar loaded.")
+print("[PIYAP HUB] Fast Attack, Fly, Auto-Save & Command Bar loaded clean.")
