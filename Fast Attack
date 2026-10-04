@@ -1,4 +1,4 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + AUTO-SAVE + CLEANUP
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + KILL ORBIT
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -124,7 +124,7 @@ task.spawn(function()
     local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
 
     while task.wait(0.08) do
-        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end -- Kill old loop
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
         
         if RegisterAttack and RegisterHit then
             pcall(function()
@@ -252,25 +252,22 @@ local function toggleFly()
 end
 
 --========================================================================
--- TWEEN / MOVEMENT SYSTEM
+-- TWEEN & KILL ORBIT SYSTEM
 --========================================================================
 _G.LoopTweenTarget = nil
+_G.OrbitTarget = nil
 
 local noclipConn = nil
 local moveConn = nil
-local upMoveConn = nil
 local antiFallBv = nil
 local isHuntingMode = false
 
-local isProtecting = false
-local manualOverride = false
-
 local function stopMovement()
     if moveConn then moveConn:Disconnect() moveConn = nil end
-    if upMoveConn then upMoveConn:Disconnect() upMoveConn = nil end
     if noclipConn then noclipConn:Disconnect() noclipConn = nil end
     if antiFallBv then antiFallBv:Destroy() antiFallBv = nil end
     _G.LoopTweenTarget = nil
+    _G.OrbitTarget = nil
     isHuntingMode = false
 end
 
@@ -287,10 +284,13 @@ local function enableNoclip()
     end
 end
 
-local function startUpwardMovement()
+-- Orbital Kill Move
+local function startOrbit(targetPlayer)
     stopMovement()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
+
+    _G.OrbitTarget = targetPlayer
 
     antiFallBv = Instance.new("BodyVelocity")
     antiFallBv.Name = "AntiFallBv"
@@ -300,16 +300,40 @@ local function startUpwardMovement()
 
     enableNoclip()
 
-    upMoveConn = RunService.Heartbeat:Connect(function(dt)
+    moveConn = RunService.Heartbeat:Connect(function(dt)
         local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not myHrp then stopMovement() return end
+
+        local tChar = _G.OrbitTarget and _G.OrbitTarget.Character
+        local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
         
-        local step = _G.PiyapSettings.TweenSpeed * dt
-        myHrp.CFrame = myHrp.CFrame + Vector3.new(0, step, 0)
+        if tHrp then
+            local t = tick()
+            local orbitTime = t * 4 -- Orbit angular speed
+            local orbitRadius = 40 + math.sin(t * 2) * 10 -- Dynamically changes between 30 and 50 studs
+            
+            -- Multi-axis chaotic orbit
+            local offsetX = math.cos(orbitTime) * orbitRadius
+            local offsetZ = math.sin(orbitTime) * orbitRadius
+            local offsetY = math.sin(orbitTime * 1.5) * (orbitRadius * 0.8)
+            
+            local targetPos = tHrp.Position + Vector3.new(offsetX, offsetY, offsetZ)
+            
+            local dir = (targetPos - myHrp.Position)
+            local dist = dir.Magnitude
+            
+            local step = 500 * dt -- 500 Tween Speed
+            if step > dist then step = dist end
+            
+            myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, tHrp.Position)
+        else
+            stopMovement()
+        end
     end)
-    addConn(upMoveConn)
+    addConn(moveConn)
 end
 
+-- Standard Smooth Tween Move
 local function startMovement(targetCFrame, targetPlayer, hunting)
     stopMovement()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -363,39 +387,6 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
     addConn(moveConn)
 end
 
--- Protection Loop
-task.spawn(function()
-    while task.wait(0.2) do
-        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end
-        
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        
-        if hum and hum.Health > 0 then
-            local pct = hum.Health / hum.MaxHealth
-            if pct <= 0.10 then
-                if not isProtecting and not manualOverride then
-                    isProtecting = true
-                    startUpwardMovement()
-                    pcall(function() StarterGui:SetCore("SendNotification", {Title = "Protection Enabled", Text = "Health critical! Evading.", Duration = 3}) end)
-                end
-            elseif pct >= 0.50 then
-                if isProtecting or manualOverride then
-                    if isProtecting then
-                        stopMovement()
-                        pcall(function() StarterGui:SetCore("SendNotification", {Title = "Protection Disabled", Text = "Health recovered.", Duration = 3}) end)
-                    end
-                    isProtecting = false
-                    manualOverride = false
-                end
-            end
-        else
-            isProtecting = false
-            manualOverride = false
-        end
-    end
-end)
-
 local function getPlayer(str)
     if not str then return nil end
     str = string.lower(str)
@@ -426,7 +417,7 @@ CmdBar.BorderSizePixel = 2
 CmdBar.Font = Enum.Font.GothamMedium
 CmdBar.TextSize = 14
 CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-CmdBar.PlaceholderText = "Command (e.g. hunt username)"
+CmdBar.PlaceholderText = "Command (e.g. kill username)"
 CmdBar.ClearTextOnFocus = false
 CmdBar.Visible = false 
 CmdBar.Parent = ScreenGui
@@ -498,8 +489,9 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
                     startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
                 end
             end
-        elseif cmd == "up" then
-            startUpwardMovement()
+        elseif cmd == "kill" or cmd == "k" then
+            local p = getPlayer(args[2])
+            if p then startOrbit(p) end
         elseif cmd == "tweenspeed" then
             local spd = tonumber(args[2])
             if spd then 
@@ -516,12 +508,8 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
         elseif cmd == "re" then
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.Health = 0 end
-        elseif cmd == "stop" then
+        elseif cmd == "stop" or cmd == "s" then
             stopMovement()
-            if isProtecting then
-                manualOverride = true 
-                isProtecting = false
-            end
         elseif cmd == "flykey" then
             local newKey = args[2]
             if newKey then
@@ -539,11 +527,11 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
         elseif cmd == "cmds" then
             StarterGui:SetCore("SendNotification", {
                 Title = "Piyap Hub Commands",
-                Text = "t/tween [plr/dark]\nup\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nflykey [key]\nflyspeed [num]\nre\nstop",
+                Text = "t/tween [plr]\nkill/k [plr]\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nflykey [key]\nflyspeed [num]\nre\nstop/s",
                 Duration = 10
             })
         end
     end
 end))
 
-print("[PIYAP HUB] Fast Attack, Fly, Auto-Save & Command Bar loaded clean.")
+print("[PIYAP HUB] Fast Attack, Fly & Kill Orbit loaded.")
