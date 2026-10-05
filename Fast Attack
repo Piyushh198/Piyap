@@ -1,4 +1,4 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + CUSTOM NOTIFICATIONS
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + KEYBIND GUI + AUTO Q FIX
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -7,6 +7,7 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 while not LocalPlayer do
@@ -44,10 +45,12 @@ end
 
 local targetParent = getSafeGuiParent()
 pcall(function()
-    local old = targetParent:FindFirstChild("PiyapCommandBar")
-    if old then old:Destroy() end
+    local oldCmd = targetParent:FindFirstChild("PiyapCommandBar")
+    if oldCmd then oldCmd:Destroy() end
     local oldNotif = targetParent:FindFirstChild("PiyapNotifications")
     if oldNotif then oldNotif:Destroy() end
+    local oldBind = targetParent:FindFirstChild("PiyapKeybindGui")
+    if oldBind then oldBind:Destroy() end
     
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
@@ -60,7 +63,7 @@ pcall(function()
 end)
 
 --========================================================================
--- CUSTOM DARK NOTIFICATION SYSTEM (NO OUTLINE)
+-- CUSTOM DARK/WHITE NOTIFICATION SYSTEM
 --========================================================================
 local NotifGui = Instance.new("ScreenGui")
 NotifGui.Name = "PiyapNotifications"
@@ -69,7 +72,6 @@ NotifGui.Parent = targetParent
 
 local function sendNotification(title, text, duration)
     duration = duration or 3
-    
     local count = #NotifGui:GetChildren()
     local yOffset = -80 - (count * 70)
     
@@ -124,11 +126,23 @@ sendNotification("Piyap Hub", "Loaded successfully. Press ';' for commands.", 5)
 --========================================================================
 local settingsFile = "PiyapHub_Settings.json"
 _G.PiyapSettings = _G.PiyapSettings or {
-    FlyKey = "P",
     FlySpeed = 120,
     TweenSpeed = 200,
     KillSpeed = 500,
-    FastAttack = true
+    FastAttack = true,
+    FaSpeed = 12.5, 
+    AutoQ = false,
+    AttackFriends = false,
+    Keybinds = {
+        fly = "P",
+        stop = "S",
+        fa = "",
+        q = "",
+        dark = "",
+        core = "",
+        up = "",
+        re = ""
+    }
 }
 
 local function saveSettings()
@@ -145,14 +159,19 @@ pcall(function()
         local parsed = HttpService:JSONDecode(data)
         if parsed then
             for k, v in pairs(parsed) do
-                _G.PiyapSettings[k] = v
+                if k == "Keybinds" and type(v) == "table" then
+                    for bindCmd, bindKey in pairs(v) do
+                        _G.PiyapSettings.Keybinds[bindCmd] = bindKey
+                    end
+                else
+                    _G.PiyapSettings[k] = v
+                end
             end
         end
     end
 end)
 
--- Force Fast Attack ON by default every execution
-_G.PiyapSettings.FastAttack = true
+_G.PiyapSettings.FastAttack = true -- Force ON every inject
 
 --========================================================================
 -- FRIEND CACHE
@@ -175,14 +194,14 @@ addConn(Players.PlayerAdded:Connect(function(p)
 end))
 
 --========================================================================
--- FAST ATTACK
+-- FAST ATTACK & AUTO Q
 --========================================================================
 task.spawn(function()
     local Net = ReplicatedStorage:WaitForChild("Modules", 5) and ReplicatedStorage.Modules:WaitForChild("Net", 5)
     local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 5)
     local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
 
-    while task.wait(0.08) do
+    while task.wait(1 / math.clamp(_G.PiyapSettings.FaSpeed, 1, 30)) do
         if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
         
         if _G.PiyapSettings.FastAttack and RegisterAttack and RegisterHit then
@@ -208,13 +227,15 @@ task.spawn(function()
                 end
 
                 for _, other in ipairs(Players:GetPlayers()) do
-                    if other ~= LocalPlayer and not friendCache[other.UserId] and other.Character then
-                        local pHum = other.Character:FindFirstChildOfClass("Humanoid")
-                        local pHead = other.Character:FindFirstChild("Head")
-                        local pRoot = other.Character:FindFirstChild("HumanoidRootPart")
-                        if pHum and pHead and pRoot and pHum.Health > 0 and (pRoot.Position - myRoot.Position).Magnitude <= 200 then
-                            table.insert(targets, {other.Character, pHead})
-                            primaryHit = pHead
+                    if other ~= LocalPlayer and other.Character then
+                        if _G.PiyapSettings.AttackFriends or not friendCache[other.UserId] then
+                            local pHum = other.Character:FindFirstChildOfClass("Humanoid")
+                            local pHead = other.Character:FindFirstChild("Head")
+                            local pRoot = other.Character:FindFirstChild("HumanoidRootPart")
+                            if pHum and pHead and pRoot and pHum.Health > 0 and (pRoot.Position - myRoot.Position).Magnitude <= 200 then
+                                table.insert(targets, {other.Character, pHead})
+                                primaryHit = pHead
+                            end
                         end
                     end
                 end
@@ -223,6 +244,20 @@ task.spawn(function()
                     RegisterAttack:FireServer(0)
                     RegisterHit:FireServer(primaryHit, targets)
                 end
+            end)
+        end
+    end
+end)
+
+-- Auto Q Loop
+task.spawn(function()
+    while task.wait(0.1) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
+        if _G.PiyapSettings.AutoQ then
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
             end)
         end
     end
@@ -288,7 +323,6 @@ local function startFly()
         end
 
         bg.CFrame = Cam.CFrame
-
         local dir = Vector3.zero
         if FlyKeys.W then dir += Cam.CFrame.LookVector end
         if FlyKeys.S then dir -= Cam.CFrame.LookVector end
@@ -318,11 +352,13 @@ _G.OrbitTarget = nil
 
 local noclipConn = nil
 local moveConn = nil
+local upMoveConn = nil
 local antiFallBv = nil
 local isHuntingMode = false
 
 local function stopMovement()
     if moveConn then moveConn:Disconnect() moveConn = nil end
+    if upMoveConn then upMoveConn:Disconnect() upMoveConn = nil end
     if noclipConn then noclipConn:Disconnect() noclipConn = nil end
     if antiFallBv then antiFallBv:Destroy() antiFallBv = nil end
     _G.LoopTweenTarget = nil
@@ -343,14 +379,35 @@ local function enableNoclip()
     end
 end
 
--- Orbital Kill Move
+local function startUpwardMovement()
+    stopMovement()
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    antiFallBv = Instance.new("BodyVelocity")
+    antiFallBv.Name = "AntiFallBv"
+    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    antiFallBv.Velocity = Vector3.zero
+    antiFallBv.Parent = hrp
+
+    enableNoclip()
+
+    upMoveConn = RunService.Heartbeat:Connect(function(dt)
+        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not myHrp then stopMovement() return end
+        
+        local step = _G.PiyapSettings.TweenSpeed * dt
+        myHrp.CFrame = myHrp.CFrame + Vector3.new(0, step, 0)
+    end)
+    addConn(upMoveConn)
+end
+
 local function startOrbit(targetPlayer)
     stopMovement()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
     _G.OrbitTarget = targetPlayer
-
     antiFallBv = Instance.new("BodyVelocity")
     antiFallBv.Name = "AntiFallBv"
     antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
@@ -390,7 +447,6 @@ local function startOrbit(targetPlayer)
     addConn(moveConn)
 end
 
--- Standard Smooth Tween Move
 local function startMovement(targetCFrame, targetPlayer, hunting)
     stopMovement()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -458,6 +514,96 @@ local function getPlayer(str)
 end
 
 --========================================================================
+-- COMMAND EXECUTOR (CENTRALIZED)
+--========================================================================
+local KeybindGui
+
+local function executeCommand(text)
+    local args = string.split(string.lower(text), " ")
+    local cmd = args[1]
+    
+    if cmd == "tween" or cmd == "t" then
+        local p = getPlayer(args[2])
+        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
+        end
+    elseif cmd == "dark" then
+        local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
+        startMovement(darkCFrame, nil, false)
+    elseif cmd == "core" then
+        local coreCFrame = CFrame.new(429.5496826171875, 211.65948486328125, -430.6715393066406)
+        startMovement(coreCFrame, nil, false)
+    elseif cmd == "up" then
+        startUpwardMovement()
+    elseif cmd == "kill" or cmd == "k" then
+        local p = getPlayer(args[2])
+        if p then startOrbit(p) end
+    elseif cmd == "killspeed" or cmd == "ksp" then
+        local spd = tonumber(args[2])
+        if spd then 
+            _G.PiyapSettings.KillSpeed = spd 
+            saveSettings()
+            sendNotification("Piyap Hub", "Kill Speed set to " .. spd, 3)
+        end
+    elseif cmd == "tweenspeed" then
+        local spd = tonumber(args[2])
+        if spd then 
+            _G.PiyapSettings.TweenSpeed = spd 
+            saveSettings()
+            sendNotification("Piyap Hub", "Tween Speed set to " .. spd, 3)
+        end
+    elseif cmd == "looptween" or cmd == "ltween" then
+        local p = getPlayer(args[2])
+        if p then startMovement(nil, p, false) end
+    elseif cmd == "hunt" or cmd == "h" then
+        local p = getPlayer(args[2])
+        if p then startMovement(nil, p, true) end
+    elseif cmd == "fa" or cmd == "fastattack" then
+        _G.PiyapSettings.FastAttack = not _G.PiyapSettings.FastAttack
+        saveSettings()
+        sendNotification("Piyap Hub", "Fast Attack: " .. (_G.PiyapSettings.FastAttack and "ON" or "OFF"), 3)
+    elseif cmd == "faspeed" then
+        local spd = tonumber(args[2])
+        if spd then
+            _G.PiyapSettings.FaSpeed = spd
+            saveSettings()
+            sendNotification("Piyap Hub", "FA Speed set to " .. spd .. " CPS", 3)
+        end
+    elseif cmd == "q" then
+        _G.PiyapSettings.AutoQ = not _G.PiyapSettings.AutoQ
+        saveSettings()
+        sendNotification("Piyap Hub", "Auto Q: " .. (_G.PiyapSettings.AutoQ and "ON" or "OFF"), 3)
+        
+        -- FIX: Release Q explicitly when turning off to prevent it from getting stuck
+        if not _G.PiyapSettings.AutoQ then
+            pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end)
+        end
+    elseif cmd == "attackfriends" then
+        _G.PiyapSettings.AttackFriends = not _G.PiyapSettings.AttackFriends
+        saveSettings()
+        sendNotification("Piyap Hub", "Attack Friends: " .. (_G.PiyapSettings.AttackFriends and "ON" or "OFF"), 3)
+    elseif cmd == "fly" then
+        toggleFly()
+    elseif cmd == "flyspeed" then
+        local spd = tonumber(args[2])
+        if spd then 
+            _G.PiyapSettings.FlySpeed = spd 
+            saveSettings()
+            sendNotification("Piyap Hub", "Fly Speed set to " .. spd, 3)
+        end
+    elseif cmd == "re" then
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Health = 0 end
+    elseif cmd == "stop" or cmd == "s" then
+        stopMovement()
+    elseif cmd == "keybind" or cmd == "binds" then
+        KeybindGui.Enabled = not KeybindGui.Enabled
+    elseif cmd == "cmds" then
+        sendNotification("Piyap Hub Commands", "t/tween, dark, core, up, kill/k, killspeed\nltween, hunt, tweenspeed, fa, faspeed\nq, attackfriends, fly, flyspeed, re, stop/s\nkeybind", 10)
+    end
+end
+
+--========================================================================
 -- UI SETUP (COMMAND BAR)
 --========================================================================
 local CmdGui = Instance.new("ScreenGui")
@@ -490,20 +636,187 @@ local function openCmdBar()
     CmdBar:CaptureFocus()
 end
 
+addConn(CmdBar.FocusLost:Connect(function(enterPressed)
+    CmdBar.Visible = false 
+    if enterPressed then
+        local text = CmdBar.Text
+        CmdBar.Text = "" 
+        if text:sub(1, 1) == ";" then text = text:sub(2) end
+        executeCommand(text)
+    end
+end))
+
 --========================================================================
--- INPUT HANDLING
+-- UI SETUP (KEYBIND GUI)
+--========================================================================
+KeybindGui = Instance.new("ScreenGui")
+KeybindGui.Name = "PiyapKeybindGui"
+KeybindGui.ResetOnSpawn = false
+KeybindGui.Enabled = false
+KeybindGui.Parent = targetParent
+
+local KbFrame = Instance.new("Frame")
+KbFrame.Size = UDim2.new(0, 300, 0, 400)
+KbFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+KbFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+KbFrame.BorderSizePixel = 0
+KbFrame.Active = true
+KbFrame.Draggable = true
+KbFrame.Parent = KeybindGui
+
+local KbCorner = Instance.new("UICorner")
+KbCorner.CornerRadius = UDim.new(0, 6)
+KbCorner.Parent = KbFrame
+
+local KbTopBar = Instance.new("Frame")
+KbTopBar.Size = UDim2.new(1, 0, 0, 35)
+KbTopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+KbTopBar.BorderSizePixel = 0
+KbTopBar.Parent = KbFrame
+local KbTopCorner = Instance.new("UICorner")
+KbTopCorner.CornerRadius = UDim.new(0, 6)
+KbTopCorner.Parent = KbTopBar
+
+local KbTitle = Instance.new("TextLabel")
+KbTitle.Size = UDim2.new(1, -40, 1, 0)
+KbTitle.Position = UDim2.new(0, 10, 0, 0)
+KbTitle.BackgroundTransparency = 1
+KbTitle.Font = Enum.Font.GothamBold
+KbTitle.Text = "Piyap Hub | Keybinds"
+KbTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+KbTitle.TextSize = 14
+KbTitle.TextXAlignment = Enum.TextXAlignment.Left
+KbTitle.Parent = KbTopBar
+
+local KbClose = Instance.new("TextButton")
+KbClose.Size = UDim2.new(0, 30, 0, 30)
+KbClose.Position = UDim2.new(1, -35, 0, 2)
+KbClose.BackgroundTransparency = 1
+KbClose.Font = Enum.Font.GothamBold
+KbClose.Text = "X"
+KbClose.TextColor3 = Color3.fromRGB(255, 80, 80)
+KbClose.TextSize = 14
+KbClose.Parent = KbTopBar
+
+KbClose.MouseButton1Click:Connect(function()
+    KeybindGui.Enabled = false
+end)
+
+local KbScroll = Instance.new("ScrollingFrame")
+KbScroll.Size = UDim2.new(1, -20, 1, -50)
+KbScroll.Position = UDim2.new(0, 10, 0, 40)
+KbScroll.BackgroundTransparency = 1
+KbScroll.ScrollBarThickness = 2
+KbScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+KbScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+KbScroll.Parent = KbFrame
+
+local KbLayout = Instance.new("UIListLayout")
+KbLayout.Padding = UDim.new(0, 5)
+KbLayout.Parent = KbScroll
+
+local bindableCommands = {
+    {"Toggle Fly", "fly"},
+    {"Toggle Fast Attack", "fa"},
+    {"Toggle Auto Q", "q"},
+    {"Tween Dark", "dark"},
+    {"Tween Core", "core"},
+    {"Tween Up", "up"},
+    {"Stop All (s)", "stop"},
+    {"Reset Char (re)", "re"}
+}
+
+local currentlyBinding = nil
+
+for _, data in ipairs(bindableCommands) do
+    local labelStr, cmdStr = data[1], data[2]
+    
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 35)
+    row.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+    row.Parent = KbScroll
+    local rowCorner = Instance.new("UICorner")
+    rowCorner.CornerRadius = UDim.new(0, 4)
+    rowCorner.Parent = row
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.Text = labelStr
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.35, -5, 0, 25)
+    btn.Position = UDim2.new(0.65, 0, 0.5, -12.5)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = _G.PiyapSettings.Keybinds[cmdStr] ~= "" and _G.PiyapSettings.Keybinds[cmdStr] or "None"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    btn.Parent = row
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 4)
+    btnCorner.Parent = btn
+    
+    btn.MouseButton1Click:Connect(function()
+        if currentlyBinding then return end
+        currentlyBinding = cmdStr
+        btn.Text = "..."
+        btn.BackgroundColor3 = Color3.fromRGB(80, 120, 200)
+        
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local keyName = input.KeyCode.Name
+                
+                -- FIX: Explicitly block the "Q" key from being used as a keybind
+                if keyName == "Q" then
+                    sendNotification("Piyap Hub", "You cannot use 'Q' as a keybind!", 3)
+                    return
+                end
+                
+                if keyName == "Escape" or keyName == "Backspace" then
+                    _G.PiyapSettings.Keybinds[cmdStr] = ""
+                    btn.Text = "None"
+                else
+                    _G.PiyapSettings.Keybinds[cmdStr] = keyName
+                    btn.Text = keyName
+                end
+                
+                btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                saveSettings()
+                currentlyBinding = nil
+                conn:Disconnect()
+            end
+        end)
+    end)
+end
+
+--========================================================================
+-- GLOBAL KEYBIND LISTENER
 --========================================================================
 addConn(UserInputService.InputBegan:Connect(function(input, gpe)
     if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then
         openCmdBar()
     end
 
-    if not gpe and input.KeyCode.Name == string.upper(_G.PiyapSettings.FlyKey) then
-        toggleFly()
+    if not gpe and input.UserInputType == Enum.UserInputType.Keyboard and not currentlyBinding then
+        local pressedKey = input.KeyCode.Name
+        for cmdStr, boundKey in pairs(_G.PiyapSettings.Keybinds) do
+            if boundKey ~= "" and pressedKey == boundKey then
+                executeCommand(cmdStr)
+            end
+        end
     end
 
     if gpe then return end
     
+    -- Fly Movement Keys
     if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = true
     elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = true
     elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = true
@@ -523,80 +836,4 @@ addConn(UserInputService.InputEnded:Connect(function(input)
     end
 end))
 
---========================================================================
--- COMMAND LOGIC
---========================================================================
-addConn(CmdBar.FocusLost:Connect(function(enterPressed)
-    CmdBar.Visible = false 
-    if enterPressed then
-        local text = CmdBar.Text
-        CmdBar.Text = "" 
-        if text:sub(1, 1) == ";" then text = text:sub(2) end
-        
-        local args = string.split(text, " ")
-        local cmd = string.lower(args[1])
-        
-        if cmd == "tween" or cmd == "t" then
-            local p = getPlayer(args[2])
-            if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
-            end
-        elseif cmd == "dark" then
-            local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
-            startMovement(darkCFrame, nil, false)
-        elseif cmd == "core" then
-            local coreCFrame = CFrame.new(429.5496826171875, 211.65948486328125, -430.6715393066406)
-            startMovement(coreCFrame, nil, false)
-        elseif cmd == "kill" or cmd == "k" then
-            local p = getPlayer(args[2])
-            if p then startOrbit(p) end
-        elseif cmd == "killspeed" or cmd == "ksp" then
-            local spd = tonumber(args[2])
-            if spd then 
-                _G.PiyapSettings.KillSpeed = spd 
-                saveSettings()
-                sendNotification("Piyap Hub", "Kill Speed set to " .. spd, 3)
-            end
-        elseif cmd == "tweenspeed" then
-            local spd = tonumber(args[2])
-            if spd then 
-                _G.PiyapSettings.TweenSpeed = spd 
-                saveSettings()
-                sendNotification("Piyap Hub", "Tween Speed set to " .. spd, 3)
-            end
-        elseif cmd == "looptween" or cmd == "ltween" then
-            local p = getPlayer(args[2])
-            if p then startMovement(nil, p, false) end
-        elseif cmd == "hunt" or cmd == "h" then
-            local p = getPlayer(args[2])
-            if p then startMovement(nil, p, true) end
-        elseif cmd == "fa" or cmd == "fastattack" then
-            _G.PiyapSettings.FastAttack = not _G.PiyapSettings.FastAttack
-            saveSettings()
-            sendNotification("Piyap Hub", "Fast Attack: " .. (_G.PiyapSettings.FastAttack and "ON" or "OFF"), 3)
-        elseif cmd == "re" then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.Health = 0 end
-        elseif cmd == "stop" or cmd == "s" then
-            stopMovement()
-        elseif cmd == "flykey" then
-            local newKey = args[2]
-            if newKey then
-                _G.PiyapSettings.FlyKey = string.upper(newKey)
-                saveSettings()
-                sendNotification("Piyap Hub", "Fly Key set to " .. string.upper(newKey), 3)
-            end
-        elseif cmd == "flyspeed" then
-            local spd = tonumber(args[2])
-            if spd then 
-                _G.PiyapSettings.FlySpeed = spd 
-                saveSettings()
-                sendNotification("Piyap Hub", "Fly Speed set to " .. spd, 3)
-            end
-        elseif cmd == "cmds" then
-            sendNotification("Piyap Hub Commands", "t/tween, dark, core, kill/k, killspeed\nltween, hunt, tweenspeed, fa\nflykey, flyspeed, re, stop/s", 10)
-        end
-    end
-end))
-
-print("[PIYAP HUB] Fast Attack, Fly & Kill Orbit loaded clean.")
+print("[PIYAP HUB] Fast Attack, Fly, Auto Q Fix & Keybinds loaded clean.")
