@@ -1,9 +1,9 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + KILL ORBIT
+--// PIYAP HUB - FAST ATTACK + COMMAND BAR + CUSTOM NOTIFICATIONS
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -46,6 +46,9 @@ local targetParent = getSafeGuiParent()
 pcall(function()
     local old = targetParent:FindFirstChild("PiyapCommandBar")
     if old then old:Destroy() end
+    local oldNotif = targetParent:FindFirstChild("PiyapNotifications")
+    if oldNotif then oldNotif:Destroy() end
+    
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
         local hrp = char.HumanoidRootPart
@@ -56,14 +59,65 @@ pcall(function()
     end
 end)
 
-pcall(function()
-    StarterGui:SetCore("SendNotification", {
-        Title = "Piyap Hub",
-        Text = "Loaded successfully. Press ';' for commands.",
-        Duration = 5,
-        Icon = "rbxassetid://6023426923"
-    })
-end)
+--========================================================================
+-- CUSTOM DARK NOTIFICATION SYSTEM (NO OUTLINE)
+--========================================================================
+local NotifGui = Instance.new("ScreenGui")
+NotifGui.Name = "PiyapNotifications"
+NotifGui.ResetOnSpawn = false
+NotifGui.Parent = targetParent
+
+local function sendNotification(title, text, duration)
+    duration = duration or 3
+    
+    local count = #NotifGui:GetChildren()
+    local yOffset = -80 - (count * 70)
+    
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 250, 0, 60)
+    frame.Position = UDim2.new(1, 10, 1, yOffset)
+    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    frame.BorderSizePixel = 0
+    frame.Parent = NotifGui
+    
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = UDim.new(0, 4)
+    
+    local titleLbl = Instance.new("TextLabel", frame)
+    titleLbl.Size = UDim2.new(1, -20, 0, 20)
+    titleLbl.Position = UDim2.new(0, 10, 0, 5)
+    titleLbl.BackgroundTransparency = 1
+    titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLbl.TextSize = 13
+    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+    titleLbl.Text = title
+    
+    local textLbl = Instance.new("TextLabel", frame)
+    textLbl.Size = UDim2.new(1, -20, 0, 30)
+    textLbl.Position = UDim2.new(0, 10, 0, 25)
+    textLbl.BackgroundTransparency = 1
+    textLbl.Font = Enum.Font.GothamMedium
+    textLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    textLbl.TextSize = 11
+    textLbl.TextXAlignment = Enum.TextXAlignment.Left
+    textLbl.TextWrapped = true
+    textLbl.Text = text
+
+    local ti = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    TweenService:Create(frame, ti, {Position = UDim2.new(1, -260, 1, yOffset)}):Play()
+
+    task.delay(duration, function()
+        if frame then
+            local tiOut = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            local tweenOut = TweenService:Create(frame, tiOut, {Position = UDim2.new(1, 10, 1, frame.Position.Y.Offset)})
+            tweenOut:Play()
+            tweenOut.Completed:Connect(function() frame:Destroy() end)
+        end
+    end)
+end
+
+sendNotification("Piyap Hub", "Loaded successfully. Press ';' for commands.", 5)
 
 --========================================================================
 -- SETTINGS & AUTO-SAVE
@@ -72,7 +126,9 @@ local settingsFile = "PiyapHub_Settings.json"
 _G.PiyapSettings = _G.PiyapSettings or {
     FlyKey = "P",
     FlySpeed = 120,
-    TweenSpeed = 200
+    TweenSpeed = 200,
+    KillSpeed = 500,
+    FastAttack = true
 }
 
 local function saveSettings()
@@ -95,6 +151,9 @@ pcall(function()
     end
 end)
 
+-- Force Fast Attack ON by default every execution
+_G.PiyapSettings.FastAttack = true
+
 --========================================================================
 -- FRIEND CACHE
 --========================================================================
@@ -116,7 +175,7 @@ addConn(Players.PlayerAdded:Connect(function(p)
 end))
 
 --========================================================================
--- FAST ATTACK (ALWAYS ON)
+-- FAST ATTACK
 --========================================================================
 task.spawn(function()
     local Net = ReplicatedStorage:WaitForChild("Modules", 5) and ReplicatedStorage.Modules:WaitForChild("Net", 5)
@@ -126,7 +185,7 @@ task.spawn(function()
     while task.wait(0.08) do
         if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
         
-        if RegisterAttack and RegisterHit then
+        if _G.PiyapSettings.FastAttack and RegisterAttack and RegisterHit then
             pcall(function()
                 local char = LocalPlayer.Character
                 local myRoot = char and char:FindFirstChild("HumanoidRootPart")
@@ -309,20 +368,18 @@ local function startOrbit(targetPlayer)
         
         if tHrp then
             local t = tick()
-            local orbitTime = t * 4 -- Orbit angular speed
-            local orbitRadius = 40 + math.sin(t * 2) * 10 -- Dynamically changes between 30 and 50 studs
+            local orbitTime = t * 4 
+            local orbitRadius = 40 + math.sin(t * 2) * 10 
             
-            -- Multi-axis chaotic orbit
             local offsetX = math.cos(orbitTime) * orbitRadius
             local offsetZ = math.sin(orbitTime) * orbitRadius
             local offsetY = math.sin(orbitTime * 1.5) * (orbitRadius * 0.8)
             
             local targetPos = tHrp.Position + Vector3.new(offsetX, offsetY, offsetZ)
-            
             local dir = (targetPos - myHrp.Position)
             local dist = dir.Magnitude
             
-            local step = 500 * dt -- 500 Tween Speed
+            local step = _G.PiyapSettings.KillSpeed * dt 
             if step > dist then step = dist end
             
             myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, tHrp.Position)
@@ -362,7 +419,7 @@ local function startMovement(targetCFrame, targetPlayer, hunting)
             local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
             
             if isHuntingMode and tHum and tHum.Health <= 0 then
-                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Target eliminated. Hunt ended.", Duration = 4})
+                sendNotification("Piyap Hub", "Target eliminated. Hunt ended.", 4)
                 stopMovement()
                 return
             end
@@ -403,27 +460,27 @@ end
 --========================================================================
 -- UI SETUP (COMMAND BAR)
 --========================================================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "PiyapCommandBar"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = targetParent
+local CmdGui = Instance.new("ScreenGui")
+CmdGui.Name = "PiyapCommandBar"
+CmdGui.ResetOnSpawn = false
+CmdGui.Parent = targetParent
 
 local CmdBar = Instance.new("TextBox")
 CmdBar.Size = UDim2.new(0, 300, 0, 35)
 CmdBar.Position = UDim2.new(0.5, -150, 0, 20) 
-CmdBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-CmdBar.BorderColor3 = Color3.fromRGB(80, 120, 200)
-CmdBar.BorderSizePixel = 2
+CmdBar.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+CmdBar.BorderColor3 = Color3.fromRGB(255, 255, 255)
+CmdBar.BorderSizePixel = 1
 CmdBar.Font = Enum.Font.GothamMedium
 CmdBar.TextSize = 14
 CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
 CmdBar.PlaceholderText = "Command (e.g. kill username)"
 CmdBar.ClearTextOnFocus = false
 CmdBar.Visible = false 
-CmdBar.Parent = ScreenGui
+CmdBar.Parent = CmdGui
 
 local CmdCorner = Instance.new("UICorner")
-CmdCorner.CornerRadius = UDim.new(0, 6)
+CmdCorner.CornerRadius = UDim.new(0, 4)
 CmdCorner.Parent = CmdBar
 
 local function openCmdBar()
@@ -480,24 +537,32 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
         local cmd = string.lower(args[1])
         
         if cmd == "tween" or cmd == "t" then
-            if args[2] and string.lower(args[2]) == "dark" then
-                local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
-                startMovement(darkCFrame, nil, false)
-            else
-                local p = getPlayer(args[2])
-                if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
-                end
+            local p = getPlayer(args[2])
+            if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
             end
+        elseif cmd == "dark" then
+            local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
+            startMovement(darkCFrame, nil, false)
+        elseif cmd == "core" then
+            local coreCFrame = CFrame.new(429.5496826171875, 211.65948486328125, -430.6715393066406)
+            startMovement(coreCFrame, nil, false)
         elseif cmd == "kill" or cmd == "k" then
             local p = getPlayer(args[2])
             if p then startOrbit(p) end
+        elseif cmd == "killspeed" or cmd == "ksp" then
+            local spd = tonumber(args[2])
+            if spd then 
+                _G.PiyapSettings.KillSpeed = spd 
+                saveSettings()
+                sendNotification("Piyap Hub", "Kill Speed set to " .. spd, 3)
+            end
         elseif cmd == "tweenspeed" then
             local spd = tonumber(args[2])
             if spd then 
                 _G.PiyapSettings.TweenSpeed = spd 
                 saveSettings()
-                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Tween Speed set to " .. spd, Duration = 3})
+                sendNotification("Piyap Hub", "Tween Speed set to " .. spd, 3)
             end
         elseif cmd == "looptween" or cmd == "ltween" then
             local p = getPlayer(args[2])
@@ -505,6 +570,10 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
         elseif cmd == "hunt" or cmd == "h" then
             local p = getPlayer(args[2])
             if p then startMovement(nil, p, true) end
+        elseif cmd == "fa" or cmd == "fastattack" then
+            _G.PiyapSettings.FastAttack = not _G.PiyapSettings.FastAttack
+            saveSettings()
+            sendNotification("Piyap Hub", "Fast Attack: " .. (_G.PiyapSettings.FastAttack and "ON" or "OFF"), 3)
         elseif cmd == "re" then
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then hum.Health = 0 end
@@ -515,23 +584,19 @@ addConn(CmdBar.FocusLost:Connect(function(enterPressed)
             if newKey then
                 _G.PiyapSettings.FlyKey = string.upper(newKey)
                 saveSettings()
-                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Fly Key set to " .. string.upper(newKey), Duration = 3})
+                sendNotification("Piyap Hub", "Fly Key set to " .. string.upper(newKey), 3)
             end
         elseif cmd == "flyspeed" then
             local spd = tonumber(args[2])
             if spd then 
                 _G.PiyapSettings.FlySpeed = spd 
                 saveSettings()
-                StarterGui:SetCore("SendNotification", {Title = "Piyap Hub", Text = "Fly Speed set to " .. spd, Duration = 3})
+                sendNotification("Piyap Hub", "Fly Speed set to " .. spd, 3)
             end
         elseif cmd == "cmds" then
-            StarterGui:SetCore("SendNotification", {
-                Title = "Piyap Hub Commands",
-                Text = "t/tween [plr]\nkill/k [plr]\nltween [plr]\nhunt [plr]\ntweenspeed [num]\nflykey [key]\nflyspeed [num]\nre\nstop/s",
-                Duration = 10
-            })
+            sendNotification("Piyap Hub Commands", "t/tween, dark, core, kill/k, killspeed\nltween, hunt, tweenspeed, fa\nflykey, flyspeed, re, stop/s", 10)
         end
     end
 end))
 
-print("[PIYAP HUB] Fast Attack, Fly & Kill Orbit loaded.")
+print("[PIYAP HUB] Fast Attack, Fly & Kill Orbit loaded clean.")
