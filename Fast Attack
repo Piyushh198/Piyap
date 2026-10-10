@@ -129,7 +129,7 @@ _G.PiyapSettings = _G.PiyapSettings or {
     FlySpeed = 120,
     TweenSpeed = 200,
     KillSpeed = 500,
-    FastAttack = true,
+    FastAttack = false,
     FaSpeed = 12.5, 
     AutoQ = false,
     AttackFriends = false,
@@ -171,7 +171,7 @@ pcall(function()
     end
 end)
 
-_G.PiyapSettings.FastAttack = true -- Force ON every inject
+_G.PiyapSettings.FastAttack = false -- Force OFF every inject by default
 
 --========================================================================
 -- FRIEND CACHE
@@ -574,7 +574,6 @@ local function executeCommand(text)
         saveSettings()
         sendNotification("Piyap Hub", "Auto Q: " .. (_G.PiyapSettings.AutoQ and "ON" or "OFF"), 3)
         
-        -- FIX: Release Q explicitly when turning off to prevent it from getting stuck
         if not _G.PiyapSettings.AutoQ then
             pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end)
         end
@@ -774,7 +773,6 @@ for _, data in ipairs(bindableCommands) do
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 local keyName = input.KeyCode.Name
                 
-                -- FIX: Explicitly block the "Q" key from being used as a keybind
                 if keyName == "Q" then
                     sendNotification("Piyap Hub", "You cannot use 'Q' as a keybind!", 3)
                     return
