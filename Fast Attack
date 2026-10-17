@@ -1,4 +1,4 @@
---// PIYAP HUB - FAST ATTACK + COMMAND BAR + FLY + KEYBIND GUI + AUTO Q FIX
+--// PIYAP HUB - V7.5 (TRUE KEYBIND TOGGLE STATES & FREECAM MOUSE LOOK)
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -8,20 +8,17 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local Lighting = game:GetService("Lighting")
+local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
-while not LocalPlayer do
-    task.wait()
-    LocalPlayer = Players.LocalPlayer
-end
+while not LocalPlayer do task.wait() LocalPlayer = Players.LocalPlayer end
 
 --========================================================================
 -- CLEANUP & PREVENT DUPLICATES
 --========================================================================
 if _G.PiyapHub_Connections then
-    for _, conn in pairs(_G.PiyapHub_Connections) do
-        pcall(function() conn:Disconnect() end)
-    end
+    for _, conn in pairs(_G.PiyapHub_Connections) do pcall(function() conn:Disconnect() end) end
 end
 _G.PiyapHub_Connections = {}
 
@@ -30,28 +27,28 @@ local function addConn(conn)
     return conn
 end
 
-if _G.PiyapHub_RunningId then
-    _G.PiyapHub_RunningId = _G.PiyapHub_RunningId + 1
-else
-    _G.PiyapHub_RunningId = 1
-end
+_G.PiyapHub_RunningId = (_G.PiyapHub_RunningId or 0) + 1
 local CURRENT_RUN_ID = _G.PiyapHub_RunningId
 
 local getSafeGuiParent = function()
-    local pcallSuccess, gui = pcall(function() return gethui() end)
-    if pcallSuccess and gui then return gui end
-    return game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")
+    local success, gui = pcall(function() return gethui() end)
+    if success and gui then return gui end
+    local successCore, coreGui = pcall(function() return game:GetService("CoreGui") end)
+    if successCore and coreGui then return coreGui end
+    return LocalPlayer:WaitForChild("PlayerGui")
 end
 
 local targetParent = getSafeGuiParent()
 pcall(function()
-    local oldCmd = targetParent:FindFirstChild("PiyapCommandBar")
-    if oldCmd then oldCmd:Destroy() end
-    local oldNotif = targetParent:FindFirstChild("PiyapNotifications")
-    if oldNotif then oldNotif:Destroy() end
-    local oldBind = targetParent:FindFirstChild("PiyapKeybindGui")
-    if oldBind then oldBind:Destroy() end
-    
+    local guis = {"PiyapCommandBar", "PiyapNotifications", "PiyapKeybindGui", "PiyapEspGui", "PiyapWpGui", "PiyapCmdsGui", "PiyapPlGui"}
+    for _, g in ipairs(guis) do
+        local old = targetParent:FindFirstChild(g)
+        if old then old:Destroy() end
+    end
+    local oldEspF = Workspace:FindFirstChild("PiyapESPFolder")
+    if oldEspF then oldEspF:Destroy() end
+    local oldWpF = Workspace:FindFirstChild("PiyapWpESPFolder")
+    if oldWpF then oldWpF:Destroy() end
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
         local hrp = char.HumanoidRootPart
@@ -60,10 +57,11 @@ pcall(function()
         if hrp:FindFirstChild("AntiFallBv") then hrp.AntiFallBv:Destroy() end
         hrp.Anchored = false
     end
+    Workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
 end)
 
 --========================================================================
--- CUSTOM DARK/WHITE NOTIFICATION SYSTEM
+-- CUSTOM FLAT NOTIFICATION SYSTEM
 --========================================================================
 local NotifGui = Instance.new("ScreenGui")
 NotifGui.Name = "PiyapNotifications"
@@ -73,84 +71,75 @@ NotifGui.Parent = targetParent
 local function sendNotification(title, text, duration)
     duration = duration or 3
     local count = #NotifGui:GetChildren()
-    local yOffset = -80 - (count * 70)
+    local yOffset = -80 - (count * 65)
     
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 250, 0, 60)
+    frame.Size = UDim2.new(0, 260, 0, 55)
     frame.Position = UDim2.new(1, 10, 1, yOffset)
-    frame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
     frame.BorderSizePixel = 0
     frame.Parent = NotifGui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
     
-    local corner = Instance.new("UICorner", frame)
-    corner.CornerRadius = UDim.new(0, 4)
-    
-    local titleLbl = Instance.new("TextLabel", frame)
+    local titleLbl = Instance.new("TextLabel")
     titleLbl.Size = UDim2.new(1, -20, 0, 20)
     titleLbl.Position = UDim2.new(0, 10, 0, 5)
     titleLbl.BackgroundTransparency = 1
     titleLbl.Font = Enum.Font.GothamBold
-    titleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    titleLbl.TextColor3 = Color3.fromRGB(90, 130, 255)
     titleLbl.TextSize = 13
     titleLbl.TextXAlignment = Enum.TextXAlignment.Left
     titleLbl.Text = title
+    titleLbl.Parent = frame
     
-    local textLbl = Instance.new("TextLabel", frame)
+    local textLbl = Instance.new("TextLabel")
     textLbl.Size = UDim2.new(1, -20, 0, 30)
-    textLbl.Position = UDim2.new(0, 10, 0, 25)
+    textLbl.Position = UDim2.new(0, 10, 0, 22)
     textLbl.BackgroundTransparency = 1
     textLbl.Font = Enum.Font.GothamMedium
-    textLbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    textLbl.TextColor3 = Color3.fromRGB(220, 220, 220)
     textLbl.TextSize = 11
     textLbl.TextXAlignment = Enum.TextXAlignment.Left
     textLbl.TextWrapped = true
     textLbl.Text = text
+    textLbl.Parent = frame
 
-    local ti = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-    TweenService:Create(frame, ti, {Position = UDim2.new(1, -260, 1, yOffset)}):Play()
-
+    TweenService:Create(frame, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = UDim2.new(1, -270, 1, yOffset)}):Play()
     task.delay(duration, function()
         if frame then
-            local tiOut = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            local tweenOut = TweenService:Create(frame, tiOut, {Position = UDim2.new(1, 10, 1, frame.Position.Y.Offset)})
+            local tweenOut = TweenService:Create(frame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(1, 10, 1, frame.Position.Y.Offset)})
             tweenOut:Play()
             tweenOut.Completed:Connect(function() frame:Destroy() end)
         end
     end)
 end
 
-sendNotification("Piyap Hub", "Loaded successfully. Press ';' for commands.", 5)
+sendNotification("Piyap Hub", "V7.5 Loaded! Press ';' for commands.", 5)
 
 --========================================================================
 -- SETTINGS & AUTO-SAVE
 --========================================================================
-local settingsFile = "PiyapHub_Settings.json"
+local settingsFile = "PiyapHub_Settings_V7.json"
+local ProtectedWaypoints = {["dark"] = true, ["core"] = true}
+
 _G.PiyapSettings = _G.PiyapSettings or {
-    FlySpeed = 120,
-    TweenSpeed = 200,
-    KillSpeed = 500,
-    FastAttack = false,
-    FaSpeed = 12.5, 
-    AutoQ = false,
-    AttackFriends = false,
+    FlySpeed = 120, TweenSpeed = 200, KillSpeed = 500, FaSpeed = 12.5,
+    FastAttack = false, AutoQ = false, AutoW = false, AttackFriends = false, 
+    NoFog = false, Fullbright = false, Spinbot = false, ChestFarm = false,
+    ESP = {Enabled = false, ShowName = true, ShowHealth = true, ShowDistance = true},
+    Waypoints = {
+        ["dark"] = {X = 3708.59, Y = 14.87, Z = -3494.14, Esp = false},
+        ["core"] = {X = 429.54, Y = 211.65, Z = -430.67, Esp = false}
+    },
     Keybinds = {
-        fly = "P",
-        stop = "S",
-        fa = "",
-        q = "",
-        dark = "",
-        core = "",
-        up = "",
-        re = ""
+        fly="P", stop="S", fa="", q="", autow="", spinbot="", nc="", fc="",
+        nofog="", fb="", aimbot="", re="", esp="", espset="", rj="", keybind="", wp="", cmds="",
+        cf="", pl="", up="", attackfriends="", dark="", core=""
     }
 }
 
 local function saveSettings()
-    pcall(function()
-        if writefile then
-            writefile(settingsFile, HttpService:JSONEncode(_G.PiyapSettings))
-        end
-    end)
+    pcall(function() if writefile then writefile(settingsFile, HttpService:JSONEncode(_G.PiyapSettings)) end end)
 end
 
 pcall(function()
@@ -159,19 +148,29 @@ pcall(function()
         local parsed = HttpService:JSONDecode(data)
         if parsed then
             for k, v in pairs(parsed) do
-                if k == "Keybinds" and type(v) == "table" then
-                    for bindCmd, bindKey in pairs(v) do
-                        _G.PiyapSettings.Keybinds[bindCmd] = bindKey
-                    end
-                else
-                    _G.PiyapSettings[k] = v
-                end
+                if type(v) == "table" and _G.PiyapSettings[k] then
+                    for subK, subV in pairs(v) do _G.PiyapSettings[k][subK] = subV end
+                else _G.PiyapSettings[k] = v end
             end
         end
     end
 end)
 
-_G.PiyapSettings.FastAttack = false -- Force OFF every inject by default
+if not _G.PiyapSettings.Waypoints["dark"] then
+    _G.PiyapSettings.Waypoints["dark"] = {X = 3708.59, Y = 14.87, Z = -3494.14, Esp = false}
+end
+if not _G.PiyapSettings.Waypoints["core"] then
+    _G.PiyapSettings.Waypoints["core"] = {X = 429.54, Y = 211.65, Z = -430.67, Esp = false}
+end
+
+_G.PiyapSettings.FastAttack = false 
+_G.PiyapSettings.AutoQ = false 
+_G.PiyapSettings.AutoW = false
+_G.PiyapSettings.Spinbot = false
+_G.PiyapSettings.ChestFarm = false
+
+local IndividualESP = {}
+local AimlockTarget = nil
 
 --========================================================================
 -- FRIEND CACHE
@@ -180,39 +179,198 @@ local friendCache = {}
 local function cacheFriends()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            task.spawn(function()
-                pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end)
-            end)
+            task.spawn(function() pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end) end)
         end
     end
 end
 cacheFriends()
 addConn(Players.PlayerAdded:Connect(function(p)
-    task.spawn(function()
-        pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end)
-    end)
+    task.spawn(function() pcall(function() friendCache[p.UserId] = LocalPlayer:IsFriendsWith(p.UserId) end) end)
 end))
 
 --========================================================================
--- FAST ATTACK & AUTO Q
+-- AIMLOCK CAMERA LOOP
+--========================================================================
+addConn(RunService.RenderStepped:Connect(function()
+    if AimlockTarget and AimlockTarget.Parent == Players then
+        local char = AimlockTarget.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local targetPart = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+        if hum and hum.Health > 0 and targetPart then
+            local cam = Workspace.CurrentCamera
+            cam.CFrame = CFrame.new(cam.CFrame.Position, targetPart.Position)
+        end
+    elseif AimlockTarget and AimlockTarget.Parent ~= Players then
+        AimlockTarget = nil
+    end
+end))
+
+--========================================================================
+-- WAYPOINT ESP LOOP
+--========================================================================
+local WpESPFolder = Instance.new("Folder", Workspace)
+WpESPFolder.Name = "PiyapWpESPFolder"
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end
+        for _, obj in ipairs(WpESPFolder:GetChildren()) do
+            if not _G.PiyapSettings.Waypoints[obj.Name] or not _G.PiyapSettings.Waypoints[obj.Name].Esp then
+                obj:Destroy()
+            end
+        end
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        for wpName, wpData in pairs(_G.PiyapSettings.Waypoints) do
+            if wpData.Esp then
+                local pos = Vector3.new(wpData.X, wpData.Y, wpData.Z)
+                local distStr = myRoot and ("\n[" .. math.floor((pos - myRoot.Position).Magnitude) .. "m]") or ""
+
+                local marker = WpESPFolder:FindFirstChild(wpName)
+                if not marker then
+                    marker = Instance.new("Part")
+                    marker.Name = wpName
+                    marker.Anchored = true
+                    marker.CanCollide = false
+                    marker.Transparency = 1
+                    marker.Position = pos
+                    marker.Parent = WpESPFolder
+                    
+                    local bg = Instance.new("BillboardGui")
+                    bg.Name = "Tag"
+                    bg.Size = UDim2.new(0, 150, 0, 40)
+                    bg.AlwaysOnTop = true
+                    bg.Parent = marker
+                    
+                    local txt = Instance.new("TextLabel")
+                    txt.Name = "Text"
+                    txt.Size = UDim2.new(1, 0, 1, 0)
+                    txt.BackgroundTransparency = 1
+                    txt.Font = Enum.Font.GothamBold
+                    txt.TextColor3 = Color3.fromRGB(200, 100, 255)
+                    txt.TextSize = 12
+                    txt.Parent = bg
+                end
+                if marker:FindFirstChild("Tag") and marker.Tag:FindFirstChild("Text") then
+                    marker.Tag.Text.Text = wpName:upper() .. distStr
+                end
+            end
+        end
+    end
+end)
+
+--========================================================================
+-- ESP SYSTEM (GLOBAL & INDIVIDUAL PLAYER LIST ESP)
+--========================================================================
+local ESPFolder = Instance.new("Folder", Workspace)
+ESPFolder.Name = "PiyapESPFolder"
+
+task.spawn(function()
+    while task.wait(0.2) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local shouldShow = _G.PiyapSettings.ESP.Enabled or IndividualESP[player.UserId]
+                local char = player.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if shouldShow and char and hum and hum.Health > 0 and root then
+                    local folder = ESPFolder:FindFirstChild(player.Name)
+                    if not folder then
+                        folder = Instance.new("Folder")
+                        folder.Name = player.Name
+                        folder.Parent = ESPFolder
+                        
+                        local hl = Instance.new("Highlight")
+                        hl.FillColor = Color3.fromRGB(90, 130, 255)
+                        hl.OutlineColor = Color3.fromRGB(255, 60, 60)
+                        hl.FillTransparency = 0.55
+                        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        hl.Adornee = char
+                        hl.Parent = folder
+                        
+                        local bg = Instance.new("BillboardGui")
+                        bg.Name = "Tag"
+                        bg.Adornee = char:FindFirstChild("Head") or root
+                        bg.Size = UDim2.new(0, 200, 0, 50)
+                        bg.ExtentsOffset = Vector3.new(0, 3, 0)
+                        bg.AlwaysOnTop = true
+                        bg.Parent = folder
+                        
+                        local txt = Instance.new("TextLabel")
+                        txt.Name = "Text"
+                        txt.Size = UDim2.new(1, 0, 1, 0)
+                        txt.BackgroundTransparency = 1
+                        txt.TextColor3 = Color3.fromRGB(255, 60, 60)
+                        txt.Font = Enum.Font.GothamBold
+                        txt.TextSize = 12
+                        txt.Parent = bg
+                    end
+                    if folder:FindFirstChild("Tag") and folder.Tag:FindFirstChild("Text") then
+                        local t = {}
+                        if _G.PiyapSettings.ESP.ShowName then table.insert(t, player.DisplayName) end
+                        if _G.PiyapSettings.ESP.ShowHealth then table.insert(t, "[HP: " .. math.floor(hum.Health) + "]") end
+                        if _G.PiyapSettings.ESP.ShowDistance and myRoot then table.insert(t, "[" .. math.floor((root.Position - myRoot.Position).Magnitude) .. "m]") end
+                        folder.Tag.Text.Text = table.concat(t, "\n")
+                    end
+                else
+                    local folder = ESPFolder:FindFirstChild(player.Name)
+                    if folder then folder:Destroy() end
+                end
+            end
+        end
+    end
+end)
+
+--========================================================================
+-- LIGHTING, SPINBOT & COMBAT MODULES
 --========================================================================
 task.spawn(function()
+    while task.wait(0.5) do
+        if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
+        if _G.PiyapSettings.Fullbright then
+            Lighting.Brightness = 2 Lighting.ClockTime = 14 Lighting.FogEnd = 100000 Lighting.GlobalShadows = false
+        end
+        if _G.PiyapSettings.NoFog then
+            Lighting.FogEnd = 100000
+            for _, v in ipairs(Lighting:GetDescendants()) do if v:IsA("Atmosphere") then v.Density = 0 end end
+        end
+    end
+end)
+
+local spinbotConn
+local function handleSpinbot()
+    if _G.PiyapSettings.Spinbot then
+        if not spinbotConn then
+            spinbotConn = RunService.Heartbeat:Connect(function()
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and not _G.LoopTweenTarget and not _G.OrbitTarget and not _G.PiyapSettings.ChestFarm then
+                    hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(60), 0)
+                end
+            end)
+            addConn(spinbotConn)
+        end
+    else
+        if spinbotConn then spinbotConn:Disconnect() spinbotConn = nil end
+    end
+end
+
+task.spawn(function()
     local Net = ReplicatedStorage:WaitForChild("Modules", 5) and ReplicatedStorage.Modules:WaitForChild("Net", 5)
-    local RegisterAttack = Net and Net:WaitForChild("RE/RegisterAttack", 5)
-    local RegisterHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
+    local RegAttack = Net and Net:WaitForChild("RE/RegisterAttack", 5)
+    local RegHit = Net and Net:WaitForChild("RE/RegisterHit", 5)
 
     while task.wait(1 / math.clamp(_G.PiyapSettings.FaSpeed, 1, 30)) do
         if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
-        
-        if _G.PiyapSettings.FastAttack and RegisterAttack and RegisterHit then
+        if _G.PiyapSettings.FastAttack and RegAttack and RegHit then
             pcall(function()
                 local char = LocalPlayer.Character
                 local myRoot = char and char:FindFirstChild("HumanoidRootPart")
                 if not myRoot then return end
-
-                local targets = {}
-                local primaryHit = nil
-
+                local targets, primaryHit = {}, nil
+                
                 local enemies = Workspace:FindFirstChild("Enemies")
                 if enemies then
                     for _, mob in ipairs(enemies:GetChildren()) do
@@ -239,371 +397,768 @@ task.spawn(function()
                         end
                     end
                 end
-
-                if primaryHit and #targets > 0 then
-                    RegisterAttack:FireServer(0)
-                    RegisterHit:FireServer(primaryHit, targets)
-                end
+                if primaryHit and #targets > 0 then RegAttack:FireServer(0) RegHit:FireServer(primaryHit, targets) end
             end)
         end
     end
 end)
 
--- Auto Q Loop
 task.spawn(function()
     while task.wait(0.1) do
         if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end 
         if _G.PiyapSettings.AutoQ then
-            pcall(function()
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
-            end)
+            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end)
         end
+        if _G.PiyapSettings.AutoW then pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game) end) end
     end
 end)
 
 --========================================================================
--- FLY SYSTEM
+-- FREECAM (WITH MOUSE LOOK), FLY & NOCLIP
 --========================================================================
-local FlyKeys = {W = false, A = false, S = false, D = false, Space = false, Control = false}
-local flyConn = nil
-local isFlying = false
+local FlyKeys = {W=false, A=false, S=false, D=false, Space=false, Control=false}
+local flyConn, fcConn, standaloneNcConn = nil, nil, nil
+local isFlying, isFreecam, standaloneNoclip = false, false, false
+local fcYaw, fcPitch = 0, 0
 
-local function clearFlyMovement()
-    pcall(function()
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            if root:FindFirstChild("PiyapFlyVelocity") then root.PiyapFlyVelocity:Destroy() end
-            if root:FindFirstChild("PiyapFlyGyro") then root.PiyapFlyGyro:Destroy() end
+local function handleStandaloneNoclip()
+    if standaloneNoclip then
+        if not standaloneNcConn then
+            standaloneNcConn = RunService.Stepped:Connect(function()
+                if LocalPlayer.Character then for _, v in ipairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
+            end)
+            addConn(standaloneNcConn)
         end
-    end)
+    else
+        if standaloneNcConn then standaloneNcConn:Disconnect() standaloneNcConn = nil end
+    end
 end
 
-local function stopFly()
-    isFlying = false
-    if flyConn then flyConn:Disconnect() flyConn = nil end
-    clearFlyMovement()
+local function toggleFreecam()
+    isFreecam = not isFreecam
+    local cam = Workspace.CurrentCamera
+    if isFreecam then
+        cam.CameraType = Enum.CameraType.Scriptable
+        local currentCFrame = cam.CFrame
+        local _, _, _, r00, r01, r02, r10, r11, r12, r20, r21, r22 = currentCFrame:GetComponents()
+        -- Extract initial angles
+        fcYaw = math.atan2(-r02, -r22)
+        fcPitch = math.asin(r12)
+        
+        fcConn = RunService.RenderStepped:Connect(function(dt)
+            local mouseDelta = UserInputService:GetMouseDelta()
+            fcYaw -= mouseDelta.X * 0.003
+            fcPitch = math.clamp(fcPitch - mouseDelta.Y * 0.003, -math.rad(89), math.rad(89))
+            
+            local rotCF = CFrame.Angles(0, fcYaw, 0) * CFrame.Angles(fcPitch, 0, 0)
+            local dir = Vector3.zero
+            if FlyKeys.W then dir += Vector3.new(0,0,-1) end 
+            if FlyKeys.S then dir += Vector3.new(0,0,1) end 
+            if FlyKeys.D then dir += Vector3.new(1,0,0) end 
+            if FlyKeys.A then dir += Vector3.new(-1,0,0) end 
+            if FlyKeys.Space then dir += Vector3.new(0,1,0) end 
+            if FlyKeys.Control then dir += Vector3.new(0,-1,0) end
+            
+            if dir.Magnitude > 0 then
+                currentCFrame = currentCFrame + (rotCF:VectorToWorldSpace(dir.Unit) * _G.PiyapSettings.FlySpeed * dt)
+            end
+            cam.CFrame = CFrame.new(currentCFrame.Position) * rotCF
+        end)
+        addConn(fcConn)
+    else
+        if fcConn then fcConn:Disconnect() fcConn = nil end
+        cam.CameraType = Enum.CameraType.Custom
+        cam.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+    end
 end
 
-local function startFly()
-    stopFly()
-    isFlying = true
+local function toggleFly()
+    isFlying = not isFlying
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not isFlying then
+        if flyConn then flyConn:Disconnect() flyConn = nil end
+        if root then if root:FindFirstChild("PiyapFlyVelocity") then root.PiyapFlyVelocity:Destroy() end if root:FindFirstChild("PiyapFlyGyro") then root.PiyapFlyGyro:Destroy() end end
+        return
+    end
     if not root then return end
-
-    local bv = Instance.new("BodyVelocity")
-    bv.Name = "PiyapFlyVelocity"
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = Vector3.zero
-    bv.Parent = root
-
-    local bg = Instance.new("BodyGyro")
-    bg.Name = "PiyapFlyGyro"
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.P = 15000
-    bg.CFrame = root.CFrame
-    bg.Parent = root
-
+    local bv = Instance.new("BodyVelocity", root) bv.Name = "PiyapFlyVelocity" bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    local bg = Instance.new("BodyGyro", root) bg.Name = "PiyapFlyGyro" bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge) bg.P = 15000
     local Cam = Workspace.CurrentCamera
     flyConn = RunService.RenderStepped:Connect(function()
-        if not isFlying then stopFly() return end
-
-        local curChar = LocalPlayer.Character
-        local curRoot = curChar and curChar:FindFirstChild("HumanoidRootPart")
-        if not curRoot then return end
-
-        if bv.Parent ~= curRoot then bv.Parent = curRoot end
-        if bg.Parent ~= curRoot then bg.Parent = curRoot end
-
-        for _, part in ipairs(curChar:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
-        end
-
+        if not isFlying then return end
+        local cRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not cRoot then return end
+        if bv.Parent ~= cRoot then bv.Parent = cRoot end if bg.Parent ~= cRoot then bg.Parent = cRoot end
+        for _, p in ipairs(LocalPlayer.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
         bg.CFrame = Cam.CFrame
         local dir = Vector3.zero
-        if FlyKeys.W then dir += Cam.CFrame.LookVector end
-        if FlyKeys.S then dir -= Cam.CFrame.LookVector end
-        if FlyKeys.D then dir += Cam.CFrame.RightVector end
-        if FlyKeys.A then dir -= Cam.CFrame.RightVector end
-        if FlyKeys.Space then dir += Vector3.new(0, 1, 0) end
-        if FlyKeys.Control then dir -= Vector3.new(0, 1, 0) end
-
-        if dir.Magnitude > 0 then
-            bv.Velocity = dir.Unit * math.clamp(_G.PiyapSettings.FlySpeed, 20, 1000)
-        else
-            bv.Velocity = Vector3.zero
-        end
+        if FlyKeys.W then dir += Cam.CFrame.LookVector end if FlyKeys.S then dir -= Cam.CFrame.LookVector end
+        if FlyKeys.D then dir += Cam.CFrame.RightVector end if FlyKeys.A then dir -= Cam.CFrame.RightVector end
+        if FlyKeys.Space then dir += Vector3.new(0,1,0) end if FlyKeys.Control then dir -= Vector3.new(0,1,0) end
+        if dir.Magnitude > 0 then bv.Velocity = dir.Unit * math.clamp(_G.PiyapSettings.FlySpeed, 20, 1000) else bv.Velocity = Vector3.zero end
     end)
     addConn(flyConn)
 end
 
-local function toggleFly()
-    if isFlying then stopFly() else startFly() end
-end
-
---========================================================================
--- TWEEN & KILL ORBIT SYSTEM
---========================================================================
-_G.LoopTweenTarget = nil
-_G.OrbitTarget = nil
-
-local noclipConn = nil
-local moveConn = nil
-local upMoveConn = nil
-local antiFallBv = nil
-local isHuntingMode = false
+_G.LoopTweenTarget, _G.OrbitTarget = nil, nil
+local noclipConn, moveConn, chestConn, antiFallBv, isHuntingMode = nil, nil, nil, nil, false
 
 local function stopMovement()
     if moveConn then moveConn:Disconnect() moveConn = nil end
-    if upMoveConn then upMoveConn:Disconnect() upMoveConn = nil end
+    if chestConn then chestConn:Disconnect() chestConn = nil end
     if noclipConn then noclipConn:Disconnect() noclipConn = nil end
     if antiFallBv then antiFallBv:Destroy() antiFallBv = nil end
-    _G.LoopTweenTarget = nil
-    _G.OrbitTarget = nil
-    isHuntingMode = false
+    _G.LoopTweenTarget, _G.OrbitTarget, isHuntingMode = nil, nil, false
+    _G.PiyapSettings.ChestFarm = false
 end
 
 local function enableNoclip()
     if not noclipConn then
         noclipConn = RunService.Stepped:Connect(function()
-            if LocalPlayer.Character then
-                for _, v in ipairs(LocalPlayer.Character:GetDescendants()) do
-                    if v:IsA("BasePart") then v.CanCollide = false end
-                end
-            end
+            if LocalPlayer.Character then for _, v in ipairs(LocalPlayer.Character:GetDescendants()) do if v:IsA("BasePart") then v.CanCollide = false end end end
         end)
         addConn(noclipConn)
     end
 end
 
-local function startUpwardMovement()
-    stopMovement()
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+-- CHEST FARM SYSTEM
+local function findNearestChest()
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local closestChest = nil
+    local shortestDist = math.huge
 
-    antiFallBv = Instance.new("BodyVelocity")
-    antiFallBv.Name = "AntiFallBv"
-    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    antiFallBv.Velocity = Vector3.zero
-    antiFallBv.Parent = hrp
-
-    enableNoclip()
-
-    upMoveConn = RunService.Heartbeat:Connect(function(dt)
-        local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not myHrp then stopMovement() return end
-        
-        local step = _G.PiyapSettings.TweenSpeed * dt
-        myHrp.CFrame = myHrp.CFrame + Vector3.new(0, step, 0)
-    end)
-    addConn(upMoveConn)
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name == "Chest1" or obj.Name == "Chest2" or obj.Name == "Chest3") then
+            if obj.Parent and obj:FindFirstChildOfClass("TouchTransmitter") then
+                local dist = (obj.Position - myRoot.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closestChest = obj
+                end
+            end
+        end
+    end
+    return closestChest
 end
 
-local function startOrbit(targetPlayer)
+local function startChestFarm()
     stopMovement()
+    _G.PiyapSettings.ChestFarm = true
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    _G.OrbitTarget = targetPlayer
-    antiFallBv = Instance.new("BodyVelocity")
-    antiFallBv.Name = "AntiFallBv"
-    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    antiFallBv.Velocity = Vector3.zero
-    antiFallBv.Parent = hrp
-
+    if hrp then
+        antiFallBv = Instance.new("BodyVelocity", hrp)
+        antiFallBv.Name = "AntiFallBv"
+        antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        antiFallBv.Velocity = Vector3.zero
+    end
     enableNoclip()
 
-    moveConn = RunService.Heartbeat:Connect(function(dt)
+    local currentChest = nil
+    chestConn = RunService.Heartbeat:Connect(function(dt)
+        if not _G.PiyapSettings.ChestFarm then stopMovement() return end
         local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not myHrp then stopMovement() return end
+        if not myHrp then return end
 
-        local tChar = _G.OrbitTarget and _G.OrbitTarget.Character
-        local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
-        
-        if tHrp then
-            local t = tick()
-            local orbitTime = t * 4 
-            local orbitRadius = 40 + math.sin(t * 2) * 10 
-            
-            local offsetX = math.cos(orbitTime) * orbitRadius
-            local offsetZ = math.sin(orbitTime) * orbitRadius
-            local offsetY = math.sin(orbitTime * 1.5) * (orbitRadius * 0.8)
-            
-            local targetPos = tHrp.Position + Vector3.new(offsetX, offsetY, offsetZ)
+        if not antiFallBv or antiFallBv.Parent ~= myHrp then
+            if antiFallBv then antiFallBv:Destroy() end
+            antiFallBv = Instance.new("BodyVelocity", myHrp)
+            antiFallBv.Name = "AntiFallBv"
+            antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            antiFallBv.Velocity = Vector3.zero
+        end
+
+        if not currentChest or not currentChest.Parent or not currentChest:FindFirstChildOfClass("TouchTransmitter") then
+            currentChest = findNearestChest()
+        end
+
+        if currentChest then
+            local targetPos = currentChest.Position
             local dir = (targetPos - myHrp.Position)
             local dist = dir.Magnitude
-            
-            local step = _G.PiyapSettings.KillSpeed * dt 
-            if step > dist then step = dist end
-            
-            myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, tHrp.Position)
-        else
-            stopMovement()
+            if dist > 2 then
+                local step = _G.PiyapSettings.TweenSpeed * dt
+                if step > dist then step = dist end
+                myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, targetPos)
+            else
+                myHrp.CFrame = currentChest.CFrame
+                if firetouchinterest then
+                    pcall(function()
+                        firetouchinterest(myHrp, currentChest, 0)
+                        firetouchinterest(myHrp, currentChest, 1)
+                    end)
+                end
+                currentChest = nil
+            end
         end
     end)
-    addConn(moveConn)
+    addConn(chestConn)
 end
 
-local function startMovement(targetCFrame, targetPlayer, hunting)
+local function startMovement(targetCFrame, targetPlayer, hunting, isOrbit, isUp)
     stopMovement()
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    _G.LoopTweenTarget = targetPlayer
+    if isOrbit then _G.OrbitTarget = targetPlayer elseif targetPlayer then _G.LoopTweenTarget = targetPlayer end
     isHuntingMode = hunting
-
-    antiFallBv = Instance.new("BodyVelocity")
-    antiFallBv.Name = "AntiFallBv"
-    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    antiFallBv.Velocity = Vector3.zero
-    antiFallBv.Parent = hrp
-
+    antiFallBv = Instance.new("BodyVelocity", hrp) antiFallBv.Name = "AntiFallBv" antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge) antiFallBv.Velocity = Vector3.zero
     enableNoclip()
 
     moveConn = RunService.Heartbeat:Connect(function(dt)
         local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not myHrp then stopMovement() return end
-
-        local targetPos
         
-        if _G.LoopTweenTarget then
-            local tChar = _G.LoopTweenTarget.Character
-            local tHrp = tChar and tChar:FindFirstChild("HumanoidRootPart")
-            local tHum = tChar and tChar:FindFirstChildOfClass("Humanoid")
-            
-            if isHuntingMode and tHum and tHum.Health <= 0 then
-                sendNotification("Piyap Hub", "Target eliminated. Hunt ended.", 4)
-                stopMovement()
-                return
-            end
-            
-            if tHrp then targetPos = tHrp.Position
+        if isUp then
+            myHrp.CFrame = myHrp.CFrame + Vector3.new(0, _G.PiyapSettings.TweenSpeed * dt, 0)
+            return
+        end
+        
+        local targetPos
+        if isOrbit and _G.OrbitTarget then
+            local tHrp = _G.OrbitTarget.Character and _G.OrbitTarget.Character:FindFirstChild("HumanoidRootPart")
+            if tHrp then
+                local t = tick() * 4
+                targetPos = tHrp.Position + Vector3.new(math.cos(t)*(40+math.sin(t/2)*10), math.sin(t*1.5)*30, math.sin(t)*(40+math.sin(t/2)*10))
             else stopMovement() return end
+        elseif _G.LoopTweenTarget then
+            local tHum = _G.LoopTweenTarget.Character and _G.LoopTweenTarget.Character:FindFirstChildOfClass("Humanoid")
+            local tHrp = _G.LoopTweenTarget.Character and _G.LoopTweenTarget.Character:FindFirstChild("HumanoidRootPart")
+            if isHuntingMode and tHum and tHum.Health <= 0 then sendNotification("Piyap Hub", "Target eliminated.", 4) stopMovement() return end
+            if tHrp then targetPos = tHrp.Position else stopMovement() return end
         else
             targetPos = targetCFrame.Position
         end
 
         local dir = (targetPos - myHrp.Position)
         local dist = dir.Magnitude
-        
+        local spd = isOrbit and _G.PiyapSettings.KillSpeed or _G.PiyapSettings.TweenSpeed
         if dist > 3 then
-            local step = _G.PiyapSettings.TweenSpeed * dt
+            local step = spd * dt
             if step > dist then step = dist end
             myHrp.CFrame = CFrame.lookAt(myHrp.Position + dir.Unit * step, targetPos)
         else
-            if not _G.LoopTweenTarget then stopMovement() end
+            if not _G.LoopTweenTarget and not isOrbit then stopMovement() end
         end
     end)
     addConn(moveConn)
 end
 
 local function getPlayer(str)
-    if not str then return nil end
-    str = string.lower(str)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if string.sub(string.lower(p.Name), 1, #str) == str or string.sub(string.lower(p.DisplayName), 1, #str) == str then
-                return p
-            end
-        end
-    end
+    if not str then return nil end str = string.lower(str)
+    for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer and (string.sub(string.lower(p.Name), 1, #str) == str or string.sub(string.lower(p.DisplayName), 1, #str) == str) then return p end end
     return nil
 end
 
 --========================================================================
--- COMMAND EXECUTOR (CENTRALIZED)
+-- REJOIN HANDLER
 --========================================================================
-local KeybindGui
+local function safeRejoin()
+    sendNotification("Piyap Hub", "Rejoining server...", 3)
+    pcall(function()
+        if #Players:GetPlayers() <= 1 then
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        else
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+        end
+    end)
+    task.wait(1)
+    pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end
 
-local function executeCommand(text)
-    local args = string.split(string.lower(text), " ")
-    local cmd = args[1]
+--========================================================================
+-- UI BUILDER (SHARED FLAT DARK THEME)
+--========================================================================
+local function createUIWindow(name, titleStr, size)
+    local gui = Instance.new("ScreenGui")
+    gui.Name = name
+    gui.ResetOnSpawn = false
+    gui.Enabled = false
+    gui.Parent = targetParent
+
+    local frame = Instance.new("Frame")
+    frame.Size = size
+    frame.Position = UDim2.new(0.5, -size.X.Offset/2, 0.5, -size.Y.Offset/2)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = gui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 4)
+
+    local topBar = Instance.new("Frame")
+    topBar.Size = UDim2.new(1, 0, 0, 35)
+    topBar.BackgroundColor3 = Color3.fromRGB(22, 22, 26)
+    topBar.BorderSizePixel = 0
+    topBar.Parent = frame
+    Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 4)
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -40, 1, 0)
+    title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.Text = titleStr
+    title.TextColor3 = Color3.fromRGB(90, 130, 255)
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = topBar
+
+    local close = Instance.new("TextButton")
+    close.Size = UDim2.new(0, 30, 0, 30)
+    close.Position = UDim2.new(1, -35, 0, 2)
+    close.BackgroundTransparency = 1
+    close.Font = Enum.Font.GothamBold
+    close.Text = "X"
+    close.TextColor3 = Color3.fromRGB(255, 70, 70)
+    close.TextSize = 14
+    close.Parent = topBar
+    close.MouseButton1Click:Connect(function() gui.Enabled = false end)
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -20, 1, -50)
+    scroll.Position = UDim2.new(0, 10, 0, 40)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 2
+    scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.Parent = frame
     
-    if cmd == "tween" or cmd == "t" then
-        local p = getPlayer(args[2])
-        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            startMovement(p.Character.HumanoidRootPart.CFrame, nil, false)
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 5)
+    layout.Parent = scroll
+
+    return gui, scroll
+end
+
+local KeybindGui, kbScroll = createUIWindow("PiyapKeybindGui", "Piyap Hub | Keybinds", UDim2.new(0, 320, 0, 400))
+local EspGui, espScroll = createUIWindow("PiyapEspGui", "Piyap Hub | ESP Settings", UDim2.new(0, 320, 0, 200))
+local WpGui, wpScroll = createUIWindow("PiyapWpGui", "Piyap Hub | Waypoints", UDim2.new(0, 400, 0, 350))
+local CmdsGui, cmdsScroll = createUIWindow("PiyapCmdsGui", "Piyap Hub | Commands", UDim2.new(0, 350, 0, 450))
+local PlGui, plScroll = createUIWindow("PiyapPlGui", "Piyap Hub | Player List", UDim2.new(0, 420, 0, 380))
+
+--========================================================================
+-- PLAYER LIST GUI POPULATION
+--========================================================================
+local function refreshPlayerList()
+    for _, v in ipairs(plScroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local row = Instance.new("Frame")
+            row.Size = UDim2.new(1, 0, 0, 46)
+            row.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+            row.BorderSizePixel = 0
+            row.Parent = plScroll
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+
+            local pfp = Instance.new("ImageLabel")
+            pfp.Size = UDim2.new(0, 34, 0, 34)
+            pfp.Position = UDim2.new(0, 6, 0.5, -17)
+            pfp.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+            pfp.BorderSizePixel = 0
+            pfp.Image = "rbxthumb://type=AvatarHeadShot&id=" .. p.UserId .. "&w=150&h=150"
+            pfp.Parent = row
+            Instance.new("UICorner", pfp).CornerRadius = UDim.new(1, 0)
+
+            local nameLbl = Instance.new("TextLabel")
+            nameLbl.Size = UDim2.new(0.38, -45, 1, 0)
+            nameLbl.Position = UDim2.new(0, 46, 0, 0)
+            nameLbl.BackgroundTransparency = 1
+            nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.Text = p.DisplayName .. "\n@" .. p.Name
+            nameLbl.TextColor3 = Color3.fromRGB(220, 220, 220)
+            nameLbl.TextSize = 11
+            nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+            nameLbl.TextTruncate = Enum.TextTruncate.AtEnd
+            nameLbl.Parent = row
+
+            local btnAim = Instance.new("TextButton")
+            btnAim.Size = UDim2.new(0.18, 0, 0, 28)
+            btnAim.Position = UDim2.new(0.40, 0, 0.5, -14)
+            btnAim.BackgroundColor3 = (AimlockTarget == p) and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+            btnAim.Font = Enum.Font.GothamBold
+            btnAim.Text = "Aimlock"
+            btnAim.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btnAim.TextSize = 11
+            btnAim.Parent = row
+            Instance.new("UICorner", btnAim).CornerRadius = UDim.new(0, 4)
+
+            btnAim.MouseButton1Click:Connect(function()
+                if AimlockTarget == p then
+                    AimlockTarget = nil
+                    sendNotification("Player List", "Aimlock disabled", 3)
+                else
+                    AimlockTarget = p
+                    sendNotification("Player List", "Aimlocked onto " .. p.DisplayName, 3)
+                end
+                refreshPlayerList()
+            end)
+
+            local btnEsp = Instance.new("TextButton")
+            btnEsp.Size = UDim2.new(0.16, 0, 0, 28)
+            btnEsp.Position = UDim2.new(0.60, 0, 0.5, -14)
+            btnEsp.BackgroundColor3 = IndividualESP[p.UserId] and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+            btnEsp.Font = Enum.Font.GothamBold
+            btnEsp.Text = "ESP"
+            btnEsp.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btnEsp.TextSize = 11
+            btnEsp.Parent = row
+            Instance.new("UICorner", btnEsp).CornerRadius = UDim.new(0, 4)
+
+            btnEsp.MouseButton1Click:Connect(function()
+                IndividualESP[p.UserId] = not IndividualESP[p.UserId]
+                btnEsp.BackgroundColor3 = IndividualESP[p.UserId] and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+                sendNotification("Player List", "ESP " .. (IndividualESP[p.UserId] and "ON" or "OFF") .. " for " .. p.DisplayName, 3)
+            end)
+
+            local btnTween = Instance.new("TextButton")
+            btnTween.Size = UDim2.new(0.18, 0, 0, 28)
+            btnTween.Position = UDim2.new(0.78, 0, 0.5, -14)
+            btnTween.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+            btnTween.Font = Enum.Font.GothamBold
+            btnTween.Text = "Tween"
+            btnTween.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btnTween.TextSize = 11
+            btnTween.Parent = row
+            Instance.new("UICorner", btnTween).CornerRadius = UDim.new(0, 4)
+
+            btnTween.MouseButton1Click:Connect(function()
+                if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    startMovement(p.Character.HumanoidRootPart.CFrame, nil, false, false, false)
+                    sendNotification("Player List", "Tweening to " .. p.DisplayName, 3)
+                end
+            end)
         end
-    elseif cmd == "dark" then
-        local darkCFrame = CFrame.new(3708.594970703125, 14.87232494354248, -3494.147705078125)
-        startMovement(darkCFrame, nil, false)
-    elseif cmd == "core" then
-        local coreCFrame = CFrame.new(429.5496826171875, 211.65948486328125, -430.6715393066406)
-        startMovement(coreCFrame, nil, false)
-    elseif cmd == "up" then
-        startUpwardMovement()
-    elseif cmd == "kill" or cmd == "k" then
+    end
+end
+
+refreshPlayerList()
+addConn(Players.PlayerAdded:Connect(refreshPlayerList))
+addConn(Players.PlayerRemoving:Connect(refreshPlayerList))
+
+--========================================================================
+-- WAYPOINTS GUI POPULATION
+--========================================================================
+local function refreshWpGui()
+    for _, v in ipairs(wpScroll:GetChildren()) do if v:IsA("Frame") or v:IsA("TextButton") then v:Destroy() end end
+    
+    local addBtn = Instance.new("TextButton")
+    addBtn.Size = UDim2.new(1, 0, 0, 35)
+    addBtn.BackgroundColor3 = Color3.fromRGB(90, 130, 255)
+    addBtn.Font = Enum.Font.GothamBold
+    addBtn.Text = "+ Add Current Position"
+    addBtn.TextColor3 = Color3.fromRGB(15, 15, 18)
+    addBtn.TextSize = 13
+    addBtn.Parent = wpScroll
+    Instance.new("UICorner", addBtn).CornerRadius = UDim.new(0, 4)
+    
+    addBtn.MouseButton1Click:Connect(function()
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local id = "wp_" .. math.random(100, 999)
+            _G.PiyapSettings.Waypoints[id] = {X = hrp.Position.X, Y = hrp.Position.Y, Z = hrp.Position.Z, Esp = false}
+            saveSettings()
+            refreshWpGui()
+            sendNotification("Waypoint", "Added new waypoint: " .. id, 3)
+        end
+    end)
+
+    for wpName, data in pairs(_G.PiyapSettings.Waypoints) do
+        local isProtected = ProtectedWaypoints[wpName]
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 40)
+        row.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        row.Parent = wpScroll
+        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+        
+        local nameBox = Instance.new("TextBox")
+        nameBox.Size = UDim2.new(0.35, 0, 1, 0)
+        nameBox.Position = UDim2.new(0, 10, 0, 0)
+        nameBox.BackgroundTransparency = 1
+        nameBox.Font = Enum.Font.GothamMedium
+        nameBox.Text = wpName
+        nameBox.TextColor3 = isProtected and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(220, 220, 220)
+        nameBox.TextSize = 13
+        nameBox.TextXAlignment = Enum.TextXAlignment.Left
+        nameBox.ClearTextOnFocus = false
+        nameBox.TextEditable = not isProtected
+        nameBox.Parent = row
+        
+        if not isProtected then
+            nameBox.FocusLost:Connect(function()
+                local newName = string.lower(string.gsub(nameBox.Text, " ", ""))
+                if newName ~= "" and newName ~= wpName and not _G.PiyapSettings.Waypoints[newName] then
+                    _G.PiyapSettings.Waypoints[newName] = _G.PiyapSettings.Waypoints[wpName]
+                    _G.PiyapSettings.Waypoints[wpName] = nil
+                    saveSettings()
+                    sendNotification("Waypoint", "Renamed to " .. newName, 3)
+                end
+                refreshWpGui()
+            end)
+        end
+        
+        local btnTween = Instance.new("TextButton")
+        btnTween.Size = UDim2.new(0.2, 0, 0, 26)
+        btnTween.Position = UDim2.new(0.4, 0, 0.5, -13)
+        btnTween.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+        btnTween.Font = Enum.Font.GothamBold
+        btnTween.Text = "Tween"
+        btnTween.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btnTween.TextSize = 12
+        btnTween.Parent = row
+        Instance.new("UICorner", btnTween).CornerRadius = UDim.new(0, 4)
+        btnTween.MouseButton1Click:Connect(function()
+            startMovement(CFrame.new(data.X, data.Y, data.Z), nil, false, false, false)
+            sendNotification("Waypoint", "Tweening to " .. wpName, 3)
+        end)
+
+        local btnEsp = Instance.new("TextButton")
+        btnEsp.Size = UDim2.new(0.15, 0, 0, 26)
+        btnEsp.Position = UDim2.new(0.63, 0, 0.5, -13)
+        btnEsp.BackgroundColor3 = data.Esp and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+        btnEsp.Font = Enum.Font.GothamBold
+        btnEsp.Text = "ESP"
+        btnEsp.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btnEsp.TextSize = 12
+        btnEsp.Parent = row
+        Instance.new("UICorner", btnEsp).CornerRadius = UDim.new(0, 4)
+        btnEsp.MouseButton1Click:Connect(function()
+            _G.PiyapSettings.Waypoints[wpName].Esp = not data.Esp
+            saveSettings()
+            refreshWpGui()
+        end)
+
+        local btnDel = Instance.new("TextButton")
+        btnDel.Size = UDim2.new(0.15, 0, 0, 26)
+        btnDel.Position = UDim2.new(0.81, 0, 0.5, -13)
+        btnDel.BackgroundColor3 = isProtected and Color3.fromRGB(35, 35, 40) or Color3.fromRGB(180, 50, 50)
+        btnDel.Font = Enum.Font.GothamBold
+        btnDel.Text = isProtected and "Locked" or "Del"
+        btnDel.TextColor3 = isProtected and Color3.fromRGB(120, 120, 120) or Color3.fromRGB(255, 255, 255)
+        btnDel.TextSize = 11
+        btnDel.Parent = row
+        Instance.new("UICorner", btnDel).CornerRadius = UDim.new(0, 4)
+        
+        if not isProtected then
+            local confirmDelete = false
+            btnDel.MouseButton1Click:Connect(function()
+                if not confirmDelete then
+                    confirmDelete = true
+                    btnDel.Text = "Sure?"
+                    btnDel.BackgroundColor3 = Color3.fromRGB(255, 120, 0)
+                    task.delay(3, function()
+                        if confirmDelete and btnDel and btnDel.Parent then
+                            confirmDelete = false
+                            btnDel.Text = "Del"
+                            btnDel.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+                        end
+                    end)
+                else
+                    _G.PiyapSettings.Waypoints[wpName] = nil
+                    saveSettings()
+                    refreshWpGui()
+                    sendNotification("Waypoint", "Deleted " .. wpName, 3)
+                end
+            end)
+        else
+            btnDel.MouseButton1Click:Connect(function()
+                sendNotification("Waypoint", wpName .. " is a default waypoint and cannot be deleted.", 3)
+            end)
+        end
+    end
+end
+refreshWpGui()
+
+--========================================================================
+-- CMDS INFO GUI POPULATION
+--========================================================================
+local commandsData = {
+    {"cf / chestfarm", "Toggles Chest Farm (automatically tweens to Chest1, Chest2, Chest3)."},
+    {"pl / playerlist", "Opens the Player List GUI (Avatar, Display Name, Aimlock, ESP, Tween)."},
+    {"kill / k [plr]", "Rapidly orbits the target player to confuse and kill them."},
+    {"killspeed / ksp [num]", "Sets the orbit speed for the kill command."},
+    {"t / tween [plr]", "Smoothly tweens your character to the target player."},
+    {"tweenspeed [num]", "Sets the movement speed for all tweens."},
+    {"ltween / hunt [plr]", "Continuously tweens to target until they die."},
+    {"fa / fastattack", "Toggles Fast Attack system (ON/OFF)."},
+    {"faspeed [num]", "Sets the Fast Attack CPS speed (Default 12.5)."},
+    {"attackfriends", "Toggles whether Fast Attack damages your Roblox friends."},
+    {"auto q", "Toggles Auto-Q spamming."},
+    {"auto w", "Toggles Auto-W holding (walks forward automatically)."},
+    {"spinbot", "Rapidly spins your RootPart to dodge directional attacks."},
+    {"nc / unc", "Toggles standalone Noclip so you can walk through walls."},
+    {"fc / freecam", "Detaches camera for safe scouting. Uses Fly Speed."},
+    {"fov [num]", "Changes your camera Field of View (e.g. fov 120)."},
+    {"fly / flyspeed [num]", "Toggles Flight and modifies flight speed."},
+    {"esp / espset", "Toggles general Player ESP and opens ESP filter settings."},
+    {"wp", "Opens the Waypoints Manager (Add, Rename, ESP, Tween)."},
+    {"up", "Continuously tweens you upwards into the sky."},
+    {"fb / fullbright", "Removes shadows and lights up the map."},
+    {"nofog", "Removes atmospheric density and game fog."},
+    {"aimbot", "Executes an external Cokeboys aimbot script."},
+    {"keybind / binds", "Opens the GUI to set custom keybinds for commands."},
+    {"re", "Instantly resets your character (sets Health to 0)."},
+    {"rj", "Instantly rejoins the server (auto-bypasses restricted sub-places)."},
+    {"stop / s", "Forces all active tweening, chest farming, or orbiting to halt."}
+}
+
+for _, data in ipairs(commandsData) do
+    local cmdStr, infoStr = data[1], data[2]
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 35)
+    row.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    row.Parent = cmdsScroll
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.7, 0, 0, 35)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.Text = cmdStr
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.2, 0, 0, 25)
+    btn.Position = UDim2.new(0.75, 0, 0, 5)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = "Info"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    btn.Parent = row
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Size = UDim2.new(1, -20, 0, 0)
+    infoLabel.Position = UDim2.new(0, 10, 0, 35)
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.Text = infoStr
+    infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    infoLabel.TextSize = 11
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.TextWrapped = true
+    infoLabel.Visible = false
+    infoLabel.Parent = row
+    
+    btn.MouseButton1Click:Connect(function()
+        infoLabel.Visible = not infoLabel.Visible
+        row.Size = infoLabel.Visible and UDim2.new(1, 0, 0, 70) or UDim2.new(1, 0, 0, 35)
+        infoLabel.Size = infoLabel.Visible and UDim2.new(1, -20, 0, 30) or UDim2.new(1, -20, 0, 0)
+        btn.BackgroundColor3 = infoLabel.Visible and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+    end)
+end
+
+--========================================================================
+-- COMMAND EXECUTOR (TRUE SMART TOGGLE STATES)
+--========================================================================
+local function executeCommand(text, forcedState)
+    local cleanText = string.lower(string.gsub(text, "^%s*(.-)%s*$", "%1"))
+    local args = string.split(cleanText, " ")
+    local cmd = args[1]
+
+    if cmd == "auto" and args[2] == "q" then cmd = "q"
+    elseif cmd == "auto" and args[2] == "w" then cmd = "autow" end
+    
+    if _G.PiyapSettings.Waypoints[cmd] then
+        local wp = _G.PiyapSettings.Waypoints[cmd]
+        startMovement(CFrame.new(wp.X, wp.Y, wp.Z), nil, false, false, false)
+        sendNotification("Piyap Hub", "Tweening to waypoint: " .. cmd, 3)
+    elseif cmd == "cf" or cmd == "chestfarm" then
+        local newState = forcedState ~= nil and forcedState or not _G.PiyapSettings.ChestFarm
+        if newState then startChestFarm() else stopMovement() end
+        sendNotification("Piyap Hub", "Chest Farm: " .. (newState and "ON" or "OFF"), 3)
+    elseif cmd == "pl" or cmd == "playerlist" then
+        PlGui.Enabled = not PlGui.Enabled
+        if PlGui.Enabled then refreshPlayerList() end
+        sendNotification("Piyap Hub", "Player List GUI " .. (PlGui.Enabled and "Opened" or "Closed"), 3)
+    elseif cmd == "tween" or cmd == "t" then
         local p = getPlayer(args[2])
-        if p then startOrbit(p) end
+        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then 
+            startMovement(p.Character.HumanoidRootPart.CFrame, nil, false, false, false) 
+            sendNotification("Piyap Hub", "Tweening to " .. p.Name, 3)
+        end
+    elseif cmd == "up" then startMovement(nil, nil, false, false, true) sendNotification("Piyap Hub", "Tweening Upwards", 3)
+    elseif cmd == "kill" or cmd == "k" then local p = getPlayer(args[2]) if p then startMovement(nil, p, false, true, false) sendNotification("Piyap Hub", "Orbiting " .. p.Name, 3) end
     elseif cmd == "killspeed" or cmd == "ksp" then
-        local spd = tonumber(args[2])
-        if spd then 
-            _G.PiyapSettings.KillSpeed = spd 
-            saveSettings()
-            sendNotification("Piyap Hub", "Kill Speed set to " .. spd, 3)
-        end
+        local spd = tonumber(args[2]) if spd then _G.PiyapSettings.KillSpeed = spd saveSettings() sendNotification("Piyap Hub", "Kill Speed: " .. spd, 3) end
     elseif cmd == "tweenspeed" then
-        local spd = tonumber(args[2])
-        if spd then 
-            _G.PiyapSettings.TweenSpeed = spd 
-            saveSettings()
-            sendNotification("Piyap Hub", "Tween Speed set to " .. spd, 3)
-        end
-    elseif cmd == "looptween" or cmd == "ltween" then
-        local p = getPlayer(args[2])
-        if p then startMovement(nil, p, false) end
-    elseif cmd == "hunt" or cmd == "h" then
-        local p = getPlayer(args[2])
-        if p then startMovement(nil, p, true) end
+        local spd = tonumber(args[2]) if spd then _G.PiyapSettings.TweenSpeed = spd saveSettings() sendNotification("Piyap Hub", "Tween Speed: " .. spd, 3) end
+    elseif cmd == "looptween" or cmd == "ltween" then local p = getPlayer(args[2]) if p then startMovement(nil, p, false, false, false) sendNotification("Piyap Hub", "Loop Tweening " .. p.Name, 3) end
+    elseif cmd == "hunt" or cmd == "h" then local p = getPlayer(args[2]) if p then startMovement(nil, p, true, false, false) sendNotification("Piyap Hub", "Hunting " .. p.Name, 3) end
     elseif cmd == "fa" or cmd == "fastattack" then
-        _G.PiyapSettings.FastAttack = not _G.PiyapSettings.FastAttack
-        saveSettings()
+        _G.PiyapSettings.FastAttack = forcedState ~= nil and forcedState or not _G.PiyapSettings.FastAttack 
+        saveSettings() 
         sendNotification("Piyap Hub", "Fast Attack: " .. (_G.PiyapSettings.FastAttack and "ON" or "OFF"), 3)
     elseif cmd == "faspeed" then
-        local spd = tonumber(args[2])
-        if spd then
-            _G.PiyapSettings.FaSpeed = spd
-            saveSettings()
-            sendNotification("Piyap Hub", "FA Speed set to " .. spd .. " CPS", 3)
-        end
-    elseif cmd == "q" then
-        _G.PiyapSettings.AutoQ = not _G.PiyapSettings.AutoQ
-        saveSettings()
+        local spd = tonumber(args[2]) if spd then _G.PiyapSettings.FaSpeed = spd saveSettings() sendNotification("Piyap Hub", "FA Speed: " .. spd, 3) end
+    elseif cmd == "q" or cmd == "autoq" then
+        _G.PiyapSettings.AutoQ = forcedState ~= nil and forcedState or not _G.PiyapSettings.AutoQ 
+        saveSettings() 
         sendNotification("Piyap Hub", "Auto Q: " .. (_G.PiyapSettings.AutoQ and "ON" or "OFF"), 3)
-        
-        if not _G.PiyapSettings.AutoQ then
-            pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end)
-        end
+        if not _G.PiyapSettings.AutoQ then pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end) end
+    elseif cmd == "autow" then
+        _G.PiyapSettings.AutoW = forcedState ~= nil and forcedState or not _G.PiyapSettings.AutoW 
+        saveSettings() 
+        sendNotification("Piyap Hub", "Auto W: " .. (_G.PiyapSettings.AutoW and "ON" or "OFF"), 3)
+        if not _G.PiyapSettings.AutoW then pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game) end) end
+    elseif cmd == "spinbot" then
+        _G.PiyapSettings.Spinbot = forcedState ~= nil and forcedState or not _G.PiyapSettings.Spinbot 
+        saveSettings() 
+        handleSpinbot() 
+        sendNotification("Piyap Hub", "Spinbot: " .. (_G.PiyapSettings.Spinbot and "ON" or "OFF"), 3)
+    elseif cmd == "nc" or cmd == "noclip" then
+        standaloneNoclip = forcedState ~= nil and forcedState or not standaloneNoclip 
+        handleStandaloneNoclip() 
+        sendNotification("Piyap Hub", "Noclip: " .. (standaloneNoclip and "ON" or "OFF"), 3)
+    elseif cmd == "fc" or cmd == "freecam" then
+        toggleFreecam() 
+        sendNotification("Piyap Hub", "Freecam: " .. (isFreecam and "ON" or "OFF"), 3)
+    elseif cmd == "fov" then
+        local val = tonumber(args[2]) if val then Workspace.CurrentCamera.FieldOfView = val sendNotification("Piyap Hub", "FOV: " .. val, 3) end
     elseif cmd == "attackfriends" then
-        _G.PiyapSettings.AttackFriends = not _G.PiyapSettings.AttackFriends
-        saveSettings()
-        sendNotification("Piyap Hub", "Attack Friends: " .. (_G.PiyapSettings.AttackFriends and "ON" or "OFF"), 3)
-    elseif cmd == "fly" then
-        toggleFly()
+        _G.PiyapSettings.AttackFriends = not _G.PiyapSettings.AttackFriends saveSettings() sendNotification("Piyap Hub", "Attack Friends: " .. (_G.PiyapSettings.AttackFriends and "ON" or "OFF"), 3)
+    elseif cmd == "fly" then 
+        toggleFly() 
+        sendNotification("Piyap Hub", "Fly: " .. (isFlying and "ON" or "OFF"), 3)
     elseif cmd == "flyspeed" then
-        local spd = tonumber(args[2])
-        if spd then 
-            _G.PiyapSettings.FlySpeed = spd 
-            saveSettings()
-            sendNotification("Piyap Hub", "Fly Speed set to " .. spd, 3)
-        end
-    elseif cmd == "re" then
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.Health = 0 end
+        local spd = tonumber(args[2]) if spd then _G.PiyapSettings.FlySpeed = spd saveSettings() sendNotification("Piyap Hub", "Fly Speed: " .. spd, 3) end
+    elseif cmd == "aimbot" then
+        sendNotification("Piyap Hub", "Loading aimbot...", 3)
+        task.spawn(function() pcall(function() loadstring(game:HttpGet("https://raw.githubusercontent.com/cokeboysclient/cokeboys-bloxfruits/refs/heads/main/main.lua"))() end) end)
+    elseif cmd == "nofog" then
+        _G.PiyapSettings.NoFog = not _G.PiyapSettings.NoFog saveSettings() sendNotification("Piyap Hub", "No Fog: " .. (_G.PiyapSettings.NoFog and "ON" or "OFF"), 3)
+    elseif cmd == "fb" or cmd == "fullbright" then
+        _G.PiyapSettings.Fullbright = not _G.PiyapSettings.Fullbright saveSettings() sendNotification("Piyap Hub", "Fullbright: " .. (_G.PiyapSettings.Fullbright and "ON" or "OFF"), 3)
+    elseif cmd == "esp" then
+        _G.PiyapSettings.ESP.Enabled = not _G.PiyapSettings.ESP.Enabled saveSettings() sendNotification("Piyap Hub", "ESP: " .. (_G.PiyapSettings.ESP.Enabled and "ON" or "OFF"), 3)
+    elseif cmd == "espset" or cmd == "espsettings" then EspGui.Enabled = not EspGui.Enabled sendNotification("Piyap Hub", "ESP Settings Opened", 3)
+    elseif cmd == "rj" or cmd == "rejoin" then
+        safeRejoin()
+    elseif cmd == "re" then local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") if hum then hum.Health = 0 sendNotification("Piyap Hub", "Reset Character", 3) end
     elseif cmd == "stop" or cmd == "s" then
         stopMovement()
-    elseif cmd == "keybind" or cmd == "binds" then
-        KeybindGui.Enabled = not KeybindGui.Enabled
-    elseif cmd == "cmds" then
-        sendNotification("Piyap Hub Commands", "t/tween, dark, core, up, kill/k, killspeed\nltween, hunt, tweenspeed, fa, faspeed\nq, attackfriends, fly, flyspeed, re, stop/s\nkeybind", 10)
+        AimlockTarget = nil
+        refreshPlayerList()
+        sendNotification("Piyap Hub", "Stopped All Operations", 3)
+    elseif cmd == "keybind" or cmd == "binds" then KeybindGui.Enabled = not KeybindGui.Enabled sendNotification("Piyap Hub", "Keybinds GUI Opened", 3)
+    elseif cmd == "wp" then WpGui.Enabled = not WpGui.Enabled sendNotification("Piyap Hub", "Waypoints GUI Opened", 3)
+    elseif cmd == "cmds" then CmdsGui.Enabled = not CmdsGui.Enabled sendNotification("Piyap Hub", "Commands GUI Opened", 3)
+    else
+        sendNotification("Error", "Command not found: " .. cmd, 3)
     end
 end
 
 --========================================================================
--- UI SETUP (COMMAND BAR)
+-- COMMAND BAR & KEYBINDS POPULATION
 --========================================================================
 local CmdGui = Instance.new("ScreenGui")
 CmdGui.Name = "PiyapCommandBar"
@@ -613,130 +1168,67 @@ CmdGui.Parent = targetParent
 local CmdBar = Instance.new("TextBox")
 CmdBar.Size = UDim2.new(0, 300, 0, 35)
 CmdBar.Position = UDim2.new(0.5, -150, 0, 20) 
-CmdBar.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-CmdBar.BorderColor3 = Color3.fromRGB(255, 255, 255)
-CmdBar.BorderSizePixel = 1
+CmdBar.BackgroundColor3 = Color3.fromRGB(15, 15, 18)
+CmdBar.BorderSizePixel = 0
 CmdBar.Font = Enum.Font.GothamMedium
 CmdBar.TextSize = 14
 CmdBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-CmdBar.PlaceholderText = "Command (e.g. kill username)"
+CmdBar.PlaceholderText = "Command (e.g. cf, pl, kill)"
 CmdBar.ClearTextOnFocus = false
 CmdBar.Visible = false 
 CmdBar.Parent = CmdGui
+Instance.new("UICorner", CmdBar).CornerRadius = UDim.new(0, 4)
 
-local CmdCorner = Instance.new("UICorner")
-CmdCorner.CornerRadius = UDim.new(0, 4)
-CmdCorner.Parent = CmdBar
-
-local function openCmdBar()
-    CmdBar.Visible = true
-    CmdBar.Text = ""
-    task.wait() 
-    CmdBar:CaptureFocus()
-end
+local function openCmdBar() CmdBar.Visible = true CmdBar.Text = "" task.wait() CmdBar:CaptureFocus() end
 
 addConn(CmdBar.FocusLost:Connect(function(enterPressed)
     CmdBar.Visible = false 
-    if enterPressed then
-        local text = CmdBar.Text
-        CmdBar.Text = "" 
+    if enterPressed and CmdBar.Text ~= "" then
+        local text = CmdBar.Text CmdBar.Text = "" 
         if text:sub(1, 1) == ";" then text = text:sub(2) end
         executeCommand(text)
     end
 end))
 
---========================================================================
--- UI SETUP (KEYBIND GUI)
---========================================================================
-KeybindGui = Instance.new("ScreenGui")
-KeybindGui.Name = "PiyapKeybindGui"
-KeybindGui.ResetOnSpawn = false
-KeybindGui.Enabled = false
-KeybindGui.Parent = targetParent
-
-local KbFrame = Instance.new("Frame")
-KbFrame.Size = UDim2.new(0, 300, 0, 400)
-KbFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
-KbFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-KbFrame.BorderSizePixel = 0
-KbFrame.Active = true
-KbFrame.Draggable = true
-KbFrame.Parent = KeybindGui
-
-local KbCorner = Instance.new("UICorner")
-KbCorner.CornerRadius = UDim.new(0, 6)
-KbCorner.Parent = KbFrame
-
-local KbTopBar = Instance.new("Frame")
-KbTopBar.Size = UDim2.new(1, 0, 0, 35)
-KbTopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-KbTopBar.BorderSizePixel = 0
-KbTopBar.Parent = KbFrame
-local KbTopCorner = Instance.new("UICorner")
-KbTopCorner.CornerRadius = UDim.new(0, 6)
-KbTopCorner.Parent = KbTopBar
-
-local KbTitle = Instance.new("TextLabel")
-KbTitle.Size = UDim2.new(1, -40, 1, 0)
-KbTitle.Position = UDim2.new(0, 10, 0, 0)
-KbTitle.BackgroundTransparency = 1
-KbTitle.Font = Enum.Font.GothamBold
-KbTitle.Text = "Piyap Hub | Keybinds"
-KbTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-KbTitle.TextSize = 14
-KbTitle.TextXAlignment = Enum.TextXAlignment.Left
-KbTitle.Parent = KbTopBar
-
-local KbClose = Instance.new("TextButton")
-KbClose.Size = UDim2.new(0, 30, 0, 30)
-KbClose.Position = UDim2.new(1, -35, 0, 2)
-KbClose.BackgroundTransparency = 1
-KbClose.Font = Enum.Font.GothamBold
-KbClose.Text = "X"
-KbClose.TextColor3 = Color3.fromRGB(255, 80, 80)
-KbClose.TextSize = 14
-KbClose.Parent = KbTopBar
-
-KbClose.MouseButton1Click:Connect(function()
-    KeybindGui.Enabled = false
-end)
-
-local KbScroll = Instance.new("ScrollingFrame")
-KbScroll.Size = UDim2.new(1, -20, 1, -50)
-KbScroll.Position = UDim2.new(0, 10, 0, 40)
-KbScroll.BackgroundTransparency = 1
-KbScroll.ScrollBarThickness = 2
-KbScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-KbScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-KbScroll.Parent = KbFrame
-
-local KbLayout = Instance.new("UIListLayout")
-KbLayout.Padding = UDim.new(0, 5)
-KbLayout.Parent = KbScroll
-
 local bindableCommands = {
     {"Toggle Fly", "fly"},
     {"Toggle Fast Attack", "fa"},
     {"Toggle Auto Q", "q"},
+    {"Toggle Auto W", "autow"},
+    {"Toggle Chest Farm", "cf"},
+    {"Toggle Spinbot", "spinbot"},
+    {"Toggle Noclip", "nc"},
+    {"Toggle Freecam", "fc"},
+    {"Toggle ESP", "esp"},
+    {"ESP Settings GUI", "espset"},
+    {"Attack Friends", "attackfriends"},
+    {"Toggle No Fog", "nofog"},
+    {"Toggle Fullbright", "fb"},
+    {"Load Aimbot", "aimbot"},
+    {"Tween Up", "up"},
     {"Tween Dark", "dark"},
     {"Tween Core", "core"},
-    {"Tween Up", "up"},
+    {"Player List GUI", "pl"},
+    {"Waypoints GUI", "wp"},
+    {"Keybinds GUI", "keybind"},
+    {"Commands GUI", "cmds"},
     {"Stop All (s)", "stop"},
-    {"Reset Char (re)", "re"}
+    {"Reset Character (re)", "re"},
+    {"Rejoin Server (rj)", "rj"}
 }
-
 local currentlyBinding = nil
 
 for _, data in ipairs(bindableCommands) do
     local labelStr, cmdStr = data[1], data[2]
-    
+    if _G.PiyapSettings.Keybinds[cmdStr] == nil then
+        _G.PiyapSettings.Keybinds[cmdStr] = ""
+    end
+
     local row = Instance.new("Frame")
     row.Size = UDim2.new(1, 0, 0, 35)
-    row.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-    row.Parent = KbScroll
-    local rowCorner = Instance.new("UICorner")
-    rowCorner.CornerRadius = UDim.new(0, 4)
-    rowCorner.Parent = row
+    row.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    row.Parent = kbScroll
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
     
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(0.6, 0, 1, 0)
@@ -752,86 +1244,118 @@ for _, data in ipairs(bindableCommands) do
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.35, -5, 0, 25)
     btn.Position = UDim2.new(0.65, 0, 0.5, -12.5)
-    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
     btn.Font = Enum.Font.GothamBold
-    btn.Text = _G.PiyapSettings.Keybinds[cmdStr] ~= "" and _G.PiyapSettings.Keybinds[cmdStr] or "None"
+    btn.Text = (_G.PiyapSettings.Keybinds[cmdStr] and _G.PiyapSettings.Keybinds[cmdStr] ~= "") and _G.PiyapSettings.Keybinds[cmdStr] or "None"
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.TextSize = 12
     btn.Parent = row
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 4)
-    btnCorner.Parent = btn
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
     
     btn.MouseButton1Click:Connect(function()
         if currentlyBinding then return end
-        currentlyBinding = cmdStr
-        btn.Text = "..."
-        btn.BackgroundColor3 = Color3.fromRGB(80, 120, 200)
-        
+        currentlyBinding = cmdStr btn.Text = "..." btn.BackgroundColor3 = Color3.fromRGB(90, 130, 255)
         local conn
         conn = UserInputService.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 local keyName = input.KeyCode.Name
-                
-                if keyName == "Q" then
-                    sendNotification("Piyap Hub", "You cannot use 'Q' as a keybind!", 3)
-                    return
-                end
-                
-                if keyName == "Escape" or keyName == "Backspace" then
-                    _G.PiyapSettings.Keybinds[cmdStr] = ""
-                    btn.Text = "None"
-                else
-                    _G.PiyapSettings.Keybinds[cmdStr] = keyName
-                    btn.Text = keyName
-                end
-                
-                btn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-                saveSettings()
-                currentlyBinding = nil
-                conn:Disconnect()
+                if keyName == "Q" then sendNotification("Error", "Cannot bind 'Q'", 3) return end
+                if keyName == "Escape" or keyName == "Backspace" then _G.PiyapSettings.Keybinds[cmdStr] = "" btn.Text = "None"
+                else _G.PiyapSettings.Keybinds[cmdStr] = keyName btn.Text = keyName end
+                btn.BackgroundColor3 = Color3.fromRGB(40, 40, 45) saveSettings() currentlyBinding = nil conn:Disconnect()
             end
         end)
     end)
 end
 
 --========================================================================
--- GLOBAL KEYBIND LISTENER
+-- ESP SETTINGS POPULATION
+--========================================================================
+local function createEspToggle(name, settingKey)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 35)
+    row.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    row.Parent = espScroll
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 4)
+    
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 10, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.Text = "Show " .. name
+    lbl.TextColor3 = Color3.fromRGB(200, 200, 200)
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+    
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.35, -5, 0, 25)
+    btn.Position = UDim2.new(0.65, 0, 0.5, -12.5)
+    btn.BackgroundColor3 = _G.PiyapSettings.ESP[settingKey] and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = _G.PiyapSettings.ESP[settingKey] and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 12
+    btn.Parent = row
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    btn.MouseButton1Click:Connect(function()
+        _G.PiyapSettings.ESP[settingKey] = not _G.PiyapSettings.ESP[settingKey]
+        btn.BackgroundColor3 = _G.PiyapSettings.ESP[settingKey] and Color3.fromRGB(90, 130, 255) or Color3.fromRGB(40, 40, 45)
+        btn.Text = _G.PiyapSettings.ESP[settingKey] and "ON" or "OFF"
+        saveSettings()
+    end)
+end
+createEspToggle("Name", "ShowName") createEspToggle("Health", "ShowHealth") createEspToggle("Distance", "ShowDistance")
+
+--========================================================================
+-- GLOBAL KEYBINDS (CHECKING CURRENT STATE TO TOGGLE OFF)
 --========================================================================
 addConn(UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then
-        openCmdBar()
-    end
-
+    if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then openCmdBar() end
     if not gpe and input.UserInputType == Enum.UserInputType.Keyboard and not currentlyBinding then
         local pressedKey = input.KeyCode.Name
         for cmdStr, boundKey in pairs(_G.PiyapSettings.Keybinds) do
-            if boundKey ~= "" and pressedKey == boundKey then
-                executeCommand(cmdStr)
+            if boundKey ~= "" and pressedKey == boundKey then 
+                if cmdStr == "fly" then
+                    executeCommand(cmdStr, not isFlying)
+                elseif cmdStr == "fa" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.FastAttack)
+                elseif cmdStr == "q" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.AutoQ)
+                elseif cmdStr == "autow" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.AutoW)
+                elseif cmdStr == "cf" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.ChestFarm)
+                elseif cmdStr == "spinbot" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.Spinbot)
+                elseif cmdStr == "nc" then
+                    executeCommand(cmdStr, not standaloneNoclip)
+                elseif cmdStr == "fc" then
+                    executeCommand(cmdStr, not isFreecam)
+                elseif cmdStr == "esp" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.ESP.Enabled)
+                elseif cmdStr == "nofog" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.NoFog)
+                elseif cmdStr == "fb" then
+                    executeCommand(cmdStr, not _G.PiyapSettings.Fullbright)
+                else
+                    executeCommand(cmdStr)
+                end
             end
         end
     end
-
     if gpe then return end
-    
-    -- Fly Movement Keys
-    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = true
-    elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = true
-    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = true
-    elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = true
-    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = true
-    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = true
-    end
+    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = true elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = true
+    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = true elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = true
+    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = true elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = true end
 end))
 
 addConn(UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = false
-    elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = false
-    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = false
-    elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = false
-    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = false
-    elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = false
-    end
+    if input.KeyCode == Enum.KeyCode.W then FlyKeys.W = false elseif input.KeyCode == Enum.KeyCode.S then FlyKeys.S = false
+    elseif input.KeyCode == Enum.KeyCode.A then FlyKeys.A = false elseif input.KeyCode == Enum.KeyCode.D then FlyKeys.D = false
+    elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = false elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = false end
 end))
 
-print("[PIYAP HUB] Fast Attack, Fly, Auto Q Fix & Keybinds loaded clean.")
+print("[PIYAP HUB] V7.5 Execution Complete.")
