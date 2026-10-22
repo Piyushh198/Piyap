@@ -1,4 +1,4 @@
---// PIYAP HUB - V7.6 (ADVANCED TEAM/HEALTHBAR ESP, TOGGLEABLE UP, AUTO-AIMBOT)
+--// PIYAP HUB - V7.7 (REMOVED AUTO-EXEC, DYNAMIC OVERHEAD ESP FIX)
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -114,19 +114,7 @@ local function sendNotification(title, text, duration)
     end)
 end
 
-sendNotification("Piyap Hub", "V7.6 Loaded! Aimbot loading in 5s...", 5)
-
---========================================================================
--- AUTO-EXECUTE AIMBOT AFTER 5 SECONDS
---========================================================================
-task.spawn(function()
-    task.wait(5)
-    if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then return end
-    sendNotification("Piyap Hub", "Auto-executing Aimbot...", 3)
-    pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/cokeboysclient/cokeboys-bloxfruits/refs/heads/main/main.lua"))()
-    end)
-end)
+sendNotification("Piyap Hub", "V7.7 Executed Successfully! Press ';' for commands.", 5)
 
 --========================================================================
 -- SETTINGS & AUTO-SAVE
@@ -168,12 +156,8 @@ pcall(function()
     end
 end)
 
-if not _G.PiyapSettings.Waypoints["dark"] then
-    _G.PiyapSettings.Waypoints["dark"] = {X = 3708.59, Y = 14.87, Z = -3494.14, Esp = false}
-end
-if not _G.PiyapSettings.Waypoints["core"] then
-    _G.PiyapSettings.Waypoints["core"] = {X = 429.54, Y = 211.65, Z = -430.67, Esp = false}
-end
+if not _G.PiyapSettings.Waypoints["dark"] then _G.PiyapSettings.Waypoints["dark"] = {X = 3708.59, Y = 14.87, Z = -3494.14, Esp = false} end
+if not _G.PiyapSettings.Waypoints["core"] then _G.PiyapSettings.Waypoints["core"] = {X = 429.54, Y = 211.65, Z = -430.67, Esp = false} end
 
 _G.PiyapSettings.FastAttack = false 
 _G.PiyapSettings.AutoQ = false 
@@ -271,7 +255,7 @@ task.spawn(function()
 end)
 
 --========================================================================
--- ADVANCED ESP SYSTEM (MARINE/PIRATE COLORS + HEALTH BAR + PLAYER LIST)
+-- DYNAMIC ESP SYSTEM (FIXED OVERHEAD ALIGNMENT)
 --========================================================================
 local ESPFolder = Instance.new("Folder", Workspace)
 ESPFolder.Name = "PiyapESPFolder"
@@ -280,15 +264,15 @@ local function getTeamColor(player)
     if player.Team and player.Team.Name then
         local tName = string.lower(player.Team.Name)
         if string.find(tName, "marine") then
-            return Color3.fromRGB(55, 155, 255) -- Marine Blue
+            return Color3.fromRGB(55, 155, 255)
         elseif string.find(tName, "pirate") then
-            return Color3.fromRGB(255, 60, 60) -- Pirate Red
+            return Color3.fromRGB(255, 60, 60)
         end
     end
     if player.TeamColor then
         return player.TeamColor.Color
     end
-    return Color3.fromRGB(255, 60, 60) -- Default Red
+    return Color3.fromRGB(255, 60, 60)
 end
 
 local function getHealthBarColor(ratio)
@@ -306,11 +290,8 @@ task.spawn(function()
         if _G.PiyapHub_RunningId ~= CURRENT_RUN_ID then break end
         local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-        -- Remove folders for players who left
         for _, child in ipairs(ESPFolder:GetChildren()) do
-            if not Players:FindFirstChild(child.Name) then
-                child:Destroy()
-            end
+            if not Players:FindFirstChild(child.Name) then child:Destroy() end
         end
 
         for _, player in ipairs(Players:GetPlayers()) do
@@ -340,11 +321,9 @@ task.spawn(function()
                         local bg = Instance.new("BillboardGui")
                         bg.Name = "Tag"
                         bg.Size = UDim2.new(0, 220, 0, 42)
-                        bg.ExtentsOffset = Vector3.new(0, 3.2, 0)
                         bg.AlwaysOnTop = true
                         bg.Parent = folder
                         
-                        -- Top Text: Display Name + [Distance]
                         local topTxt = Instance.new("TextLabel")
                         topTxt.Name = "TopText"
                         topTxt.Size = UDim2.new(1, 0, 0, 18)
@@ -355,7 +334,6 @@ task.spawn(function()
                         topTxt.TextSize = 13
                         topTxt.Parent = bg
                         
-                        -- Health Bar Background
                         local hbBack = Instance.new("Frame")
                         hbBack.Name = "HealthBarBack"
                         hbBack.Size = UDim2.new(0, 110, 0, 6)
@@ -365,7 +343,6 @@ task.spawn(function()
                         hbBack.Parent = bg
                         Instance.new("UICorner", hbBack).CornerRadius = UDim.new(1, 0)
                         
-                        -- Health Bar Fill
                         local hbFill = Instance.new("Frame")
                         hbFill.Name = "Fill"
                         hbFill.Size = UDim2.new(1, 0, 1, 0)
@@ -375,7 +352,6 @@ task.spawn(function()
                         Instance.new("UICorner", hbFill).CornerRadius = UDim.new(1, 0)
                     end
                     
-                    -- Update Adornees & Team Colors
                     local hl = folder:FindFirstChild("Highlight")
                     if hl then
                         hl.Adornee = char
@@ -385,15 +361,21 @@ task.spawn(function()
                     
                     local tag = folder:FindFirstChild("Tag")
                     if tag then
-                        tag.Adornee = head or root
+                        local targetPart = head or root
+                        tag.Adornee = targetPart
+                        
+                        -- Dynamically reads head/root size so the ESP scales directly with the avatar's height
+                        if head then
+                            tag.StudsOffset = Vector3.new(0, (head.Size.Y / 2) + 1.2, 0)
+                        elseif root then
+                            tag.StudsOffset = Vector3.new(0, (root.Size.Y / 2) + 2.5, 0)
+                        end
                         
                         local topTxt = tag:FindFirstChild("TopText")
                         if topTxt then
                             topTxt.TextColor3 = teamCol
                             local parts = {}
-                            if _G.PiyapSettings.ESP.ShowName then
-                                table.insert(parts, player.DisplayName)
-                            end
+                            if _G.PiyapSettings.ESP.ShowName then table.insert(parts, player.DisplayName) end
                             if _G.PiyapSettings.ESP.ShowDistance and myRoot then
                                 local dist = math.floor((root.Position - myRoot.Position).Magnitude)
                                 table.insert(parts, "[" .. tostring(dist) .. "m]")
@@ -513,7 +495,7 @@ task.spawn(function()
 end)
 
 --========================================================================
--- FREECAM (WITH MOUSE LOOK), FLY & NOCLIP
+-- FREECAM, FLY & MOVEMENT
 --========================================================================
 local FlyKeys = {W=false, A=false, S=false, D=false, Space=false, Control=false}
 local flyConn, fcConn, standaloneNcConn = nil, nil, nil
@@ -704,7 +686,11 @@ local function startMovement(targetCFrame, targetPlayer, hunting, isOrbit, isUp)
     if isOrbit then _G.OrbitTarget = targetPlayer elseif targetPlayer then _G.LoopTweenTarget = targetPlayer end
     isHuntingMode = hunting
     isMovingUp = isUp or false
-    antiFallBv = Instance.new("BodyVelocity", hrp) antiFallBv.Name = "AntiFallBv" antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge) antiFallBv.Velocity = Vector3.zero
+    
+    antiFallBv = Instance.new("BodyVelocity", hrp) 
+    antiFallBv.Name = "AntiFallBv" 
+    antiFallBv.MaxForce = Vector3.new(math.huge, math.huge, math.huge) 
+    antiFallBv.Velocity = Vector3.zero
     enableNoclip()
 
     moveConn = RunService.Heartbeat:Connect(function(dt)
@@ -765,9 +751,7 @@ local function safeRejoin()
         end
     end)
     task.wait(1)
-    pcall(function()
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end)
+    pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
 end
 
 --========================================================================
@@ -1228,10 +1212,6 @@ local function executeCommand(text, forcedState)
         standaloneNoclip = forcedState ~= nil and forcedState or not standaloneNoclip 
         handleStandaloneNoclip() 
         sendNotification("Piyap Hub", "Noclip: " .. (standaloneNoclip and "ON" or "OFF"), 3)
-    elseif cmd == "unc" or cmd == "unnoclip" then
-        standaloneNoclip = false
-        handleStandaloneNoclip()
-        sendNotification("Piyap Hub", "Noclip: OFF", 3)
     elseif cmd == "fc" or cmd == "freecam" then
         toggleFreecam() 
         sendNotification("Piyap Hub", "Freecam: " .. (isFreecam and "ON" or "OFF"), 3)
@@ -1425,7 +1405,7 @@ end
 createEspToggle("Name", "ShowName") createEspToggle("Health", "ShowHealth") createEspToggle("Distance", "ShowDistance")
 
 --========================================================================
--- GLOBAL KEYBINDS (CHECKING CURRENT STATE TO TOGGLE OFF)
+-- GLOBAL KEYBINDS
 --========================================================================
 addConn(UserInputService.InputBegan:Connect(function(input, gpe)
     if not gpe and input.KeyCode == Enum.KeyCode.Semicolon then openCmdBar() end
@@ -1433,33 +1413,19 @@ addConn(UserInputService.InputBegan:Connect(function(input, gpe)
         local pressedKey = input.KeyCode.Name
         for cmdStr, boundKey in pairs(_G.PiyapSettings.Keybinds) do
             if boundKey ~= "" and pressedKey == boundKey then 
-                if cmdStr == "fly" then
-                    executeCommand(cmdStr, not isFlying)
-                elseif cmdStr == "fa" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.FastAttack)
-                elseif cmdStr == "q" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.AutoQ)
-                elseif cmdStr == "autow" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.AutoW)
-                elseif cmdStr == "cf" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.ChestFarm)
-                elseif cmdStr == "spinbot" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.Spinbot)
-                elseif cmdStr == "nc" then
-                    executeCommand(cmdStr, not standaloneNoclip)
-                elseif cmdStr == "fc" then
-                    executeCommand(cmdStr, not isFreecam)
-                elseif cmdStr == "esp" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.ESP.Enabled)
-                elseif cmdStr == "up" then
-                    executeCommand(cmdStr, not isMovingUp)
-                elseif cmdStr == "nofog" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.NoFog)
-                elseif cmdStr == "fb" then
-                    executeCommand(cmdStr, not _G.PiyapSettings.Fullbright)
-                else
-                    executeCommand(cmdStr)
-                end
+                if cmdStr == "fly" then executeCommand(cmdStr, not isFlying)
+                elseif cmdStr == "fa" then executeCommand(cmdStr, not _G.PiyapSettings.FastAttack)
+                elseif cmdStr == "q" then executeCommand(cmdStr, not _G.PiyapSettings.AutoQ)
+                elseif cmdStr == "autow" then executeCommand(cmdStr, not _G.PiyapSettings.AutoW)
+                elseif cmdStr == "cf" then executeCommand(cmdStr, not _G.PiyapSettings.ChestFarm)
+                elseif cmdStr == "spinbot" then executeCommand(cmdStr, not _G.PiyapSettings.Spinbot)
+                elseif cmdStr == "nc" then executeCommand(cmdStr, not standaloneNoclip)
+                elseif cmdStr == "fc" then executeCommand(cmdStr, not isFreecam)
+                elseif cmdStr == "esp" then executeCommand(cmdStr, not _G.PiyapSettings.ESP.Enabled)
+                elseif cmdStr == "up" then executeCommand(cmdStr, not isMovingUp)
+                elseif cmdStr == "nofog" then executeCommand(cmdStr, not _G.PiyapSettings.NoFog)
+                elseif cmdStr == "fb" then executeCommand(cmdStr, not _G.PiyapSettings.Fullbright)
+                else executeCommand(cmdStr) end
             end
         end
     end
@@ -1475,4 +1441,4 @@ addConn(UserInputService.InputEnded:Connect(function(input)
     elseif input.KeyCode == Enum.KeyCode.Space then FlyKeys.Space = false elseif input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then FlyKeys.Control = false end
 end))
 
-print("[PIYAP HUB] V7.6 Execution Complete.")
+print("[PIYAP HUB] V7.7 Execution Complete.")
